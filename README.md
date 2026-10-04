@@ -50,6 +50,13 @@ changing the video or model recomputes instead of silently reusing stale results
 * Serve contact is detected as a hit near the player; other shot types (forehand/backhand) are
   not classified.
 
+## Browser simulator
+
+`simulator/index.html` is a single self-contained page (no server, no install): open it in a browser.
+It runs the same cleaning, homography, hit/bounce and speed logic, ported to JavaScript, on a synthetic rally
+with known truth, and scores the result live. Use it to see what each stage buys: turn ball cleaning off,
+hardcode 24 fps, or raise the detector noise. It is not real footage and says nothing about model accuracy.
+
 ## Tests and evaluation
 
 ```bash
