@@ -6,8 +6,8 @@ it holds for a player seen from behind as well as from the front).
 
 Rule of thumb used here, for a right-handed player: at contact the racket wrist is on the right of the
 body midline for a forehand and has crossed to the left for a backhand (a two-handed backhand included,
-because the dominant wrist crosses over). Serves are taken from the serve flag; a racket wrist above the
-nose is an overhead.
+because the dominant wrist crosses over). Serves need the serve flag and, when the pose is readable, a racket wrist above
+the nose at contact; a wrist above the nose without the flag is an overhead.
 
 Limits: handedness has to be supplied (right-handed by default); volleys, slices and drop shots are not
 separated from groundstrokes; and the result is only as good as the hit frame and the pose estimate,
@@ -59,13 +59,16 @@ def classify_shot(keypoint_sequence, is_serve=False, right_handed=True, margin=0
         if res[1] is not None:
             aboves.append(res[1])
     detail = {"frames_used": len(laterals), "frames_total": len(keypoint_sequence)}
-    if is_serve:
+    overhead = bool(aboves) and float(np.mean(aboves)) > 0.5
+    # The serve flag only means "first hit of a point near the baseline", which is also true for a clip that
+    # starts mid-rally. When the pose is readable and the wrist is not up at contact, it is not a serve.
+    if is_serve and (overhead or not aboves):
         return "serve", detail
     if not laterals:
         return "unknown", detail
     lat = float(np.median(laterals))
     detail["lateral"] = round(lat, 2)
-    if aboves and float(np.mean(aboves)) > 0.5:
+    if overhead:
         return "overhead", detail
     if lat > margin:
         return "forehand", detail
