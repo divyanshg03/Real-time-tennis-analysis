@@ -1,0 +1,9 @@
+Expected files (download links are in the top-level README):
+
+  models/yolo5_last.pt        fine-tuned ball detector (Ultralytics YOLO weights)
+  models/keypoints_model.pth  court keypoint model (ResNet50 state_dict, 28 outputs)
+
+The player model (yolov8x) is downloaded automatically by Ultralytics on first use.
+
+No keypoint model? Pass --court-keypoints-json with the 14 court keypoints (28 numbers,
+pixel coordinates, order defined in court_geometry.py) to run with manually clicked points.

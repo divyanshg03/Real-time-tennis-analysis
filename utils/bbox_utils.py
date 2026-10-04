@@ -1,0 +1,39 @@
+def get_center_of_bbox(bbox):
+    return (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2))
+
+
+def measure_distance(p1, p2):
+    return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
+
+
+def get_foot_position(bbox):
+    x1, y1, x2, y2 = bbox[:4]
+    return ((x1 + x2) / 2, y2)
+
+
+def get_closest_keypoint_index(point, keypoints, keypoint_indices):
+    closest_distance = float('inf')
+    key_point_ind = keypoint_indices[0]
+    for keypoint_indix in keypoint_indices:
+        keypoint = keypoints[keypoint_indix * 2], keypoints[keypoint_indix * 2 + 1]
+        distance = abs(point[1] - keypoint[1])
+        if distance < closest_distance:
+            closest_distance = distance
+            key_point_ind = keypoint_indix
+    return key_point_ind
+
+
+def get_height_of_bbox(bbox):
+    return bbox[3] - bbox[1]
+
+
+def measure_xy_distance(p1, p2):
+    return abs(p1[0] - p2[0]), abs(p1[1] - p2[1])
+
+
+def point_to_bbox_distance(point, bbox):
+    """Distance from a point to the nearest edge of a box (0 if inside)."""
+    x, y = point
+    dx = max(bbox[0] - x, 0, x - bbox[2])
+    dy = max(bbox[1] - y, 0, y - bbox[3])
+    return (dx * dx + dy * dy) ** 0.5

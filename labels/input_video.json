@@ -1,0 +1,23 @@
+{
+  "video": "input_videos/input_video.mp4",
+  "fps": 30.0,
+  "frame_count": 214,
+  "hits": [10, 95, 131, 172],
+  "bounces": [],
+  "shot_speeds": [],
+  "_provenance": {
+    "labelled_by": "Claude, by eye from player-centred full-resolution crops (independent of the pipeline output). NOT verified by a human.",
+    "complete": false,
+    "confidence": {
+      "10": "high (+-1): ball descends to the near player's racket across 8-10, leaves upward 11-13",
+      "95": "high (+-1): ball beside the hand at 94, motion-blurred and already leaving at 95",
+      "131": "medium (+-2): far player lunges low, ball at the racket tip at 130-131, then rolls slowly away",
+      "172": "medium-high (+-2): ball at the racket head at 172, then drifts away slowly"
+    },
+    "unlabelled_ambiguous": [
+      "frames 52-63: far player swings with the ball low and slow beside his left foot; contact not identifiable",
+      "all bounces: not labelled, ball too small to place the ground contact confidently"
+    ],
+    "notes": "Because the label set is incomplete, event precision against it is NOT meaningful (unlabelled real events count as false positives); use recall for hits. Swings and ball flight look slow throughout the clip: it may be a slow-motion replay, in which case absolute speeds from 30 fps are not real-time speeds."
+  }
+}

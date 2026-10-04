@@ -1,55 +1,22 @@
-# Prerequisites
-*.d
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
 
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
+# generated output
+runs/
+output_videos/
+tracker_stubs/
+*.pkl
 
-# Linker output
-*.ilk
-*.map
-*.exp
+# model weights: download separately (see models/put_models_here.txt)
+*.pt
+*.pth
 
-# Precompiled Headers
-*.gch
-*.pch
+# broadcast footage and images derived from it (not ours to redistribute)
+input_videos/
+labels/contact_sheet.png
 
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# debug information files
-*.dwo
+# bundled Roboflow dataset images (see training/tennis-ball-detection-6/README.*.txt)
+training/tennis-ball-detection-6/tennis-ball-detection-6/
