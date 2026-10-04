@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from analytics.pose import add_shot_types
+from analytics.pose import add_shot_types, crop_window, map_keypoints_to_frame
 from tests.test_shot_type import pose
 
 
@@ -54,3 +54,18 @@ def test_hits_near_the_clip_edges_do_not_fail(tmp_path):
     players = [{2: [10, 0, 20, 40]} for _ in range(6)]
     out = add_shot_types(shots, players, video, 6, FakePose({10: pose(580)}))
     assert len(out) == 2
+
+
+def test_crop_window_enlarges_a_small_player_and_stays_inside_the_frame():
+    x0, y0, x1, y1, scale = crop_window([900, 100, 940, 220], (1080, 1920, 3))
+    assert 0 <= x0 < x1 <= 1920 and 0 <= y0 < y1 <= 1080
+    assert scale > 2.0                                   # ~150 px crop -> at least 512 px tall
+    assert crop_window([100, 100, 300, 900], (1080, 1920, 3))[4] == 1.0   # a big player is not enlarged
+
+
+def test_keypoints_map_back_to_frame_pixels():
+    crop_kps = np.array([[200.0, 100.0, 0.9], [0.0, 0.0, 0.5]])
+    out = map_keypoints_to_frame(crop_kps, x0=1000, y0=400, scale=4.0)
+    assert out[0, 0] == 1050.0 and out[0, 1] == 425.0
+    assert out[0, 2] == 0.9                              # confidence untouched
+    assert crop_kps[0, 0] == 200.0                       # input not modified
