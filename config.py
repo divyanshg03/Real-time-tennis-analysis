@@ -44,6 +44,11 @@ class Config:
     max_player_speed_kmh: float = 45.0
     player_smooth_window: int = 5
 
+    # Shot type (optional: needs pose weights, downloaded on first use)
+    shot_types: bool = False
+    pose_model: str = "yolov8m-pose.pt"
+    left_handed: str = ""            # roles that are left-handed, e.g. "2" or "1,2" (1 = far, 2 = near)
+
     # Output
     export_csv: bool = True
     export_heatmaps: bool = True

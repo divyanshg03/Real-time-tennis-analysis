@@ -23,6 +23,10 @@ def parse_args(argv=None):
     p.add_argument("--ball-imgsz", type=int, default=d.ball_imgsz)
     p.add_argument("--ball-tile-fallback", action="store_true",
                    help="retry missed ball detections on overlapping tiles (slower, finds small balls)")
+    p.add_argument("--shot-types", action="store_true",
+                   help="classify forehand/backhand/serve/overhead from pose (downloads the pose model)")
+    p.add_argument("--pose-model", default=d.pose_model)
+    p.add_argument("--left-handed", default=d.left_handed, help='left-handed players, e.g. "2" or "1,2" (1=far, 2=near)')
     p.add_argument("--cache-dir", default=d.cache_dir)
     p.add_argument("--no-cache", action="store_true", help="never read or write the detection cache")
     p.add_argument("--refresh-cache", action="store_true", help="recompute detections and overwrite the cache")
@@ -39,6 +43,7 @@ def config_from_args(a) -> Config:
         player_model=a.player_model, ball_model=a.ball_model, court_model=a.court_model,
         court_keypoints_json=a.court_keypoints_json, court_segment_seconds=a.court_segment_seconds,
         ball_conf=a.ball_conf, ball_imgsz=a.ball_imgsz, ball_tile_fallback=a.ball_tile_fallback,
+        shot_types=a.shot_types, pose_model=a.pose_model, left_handed=a.left_handed,
         export_csv=not a.no_csv, export_heatmaps=not a.no_heatmaps,
     )
 

@@ -120,7 +120,7 @@ def render(cfg: Config, info, analysis, court_model: CourtModel, player_tracker,
             sink.write(frame)
 
 
-def run(cfg: Config, player_tracker=None, ball_tracker=None, court_model=None):
+def run(cfg: Config, player_tracker=None, ball_tracker=None, court_model=None, pose=None):
     info = get_video_info(cfg.input_video)
     log.info("video: %dx%d @ %.3f fps, %d frames", info.width, info.height, info.fps, info.frame_count)
 
@@ -146,6 +146,12 @@ def run(cfg: Config, player_tracker=None, ball_tracker=None, court_model=None):
                                                  cfg.refresh_cache)
 
     analysis = analyse(cfg, info, player_detections, ball_detections, court_model)
+    if cfg.shot_types:
+        from analytics.pose import PoseEstimator, add_shot_types
+        lefties = {int(r) for r in cfg.left_handed.split(",") if r.strip()}
+        analysis["shots"] = add_shot_types(
+            analysis["shots"], analysis["players"], cfg.input_video, len(analysis["ball"]),
+            pose or PoseEstimator(cfg.pose_model), right_handed=(1 not in lefties, 2 not in lefties))
     log.info("detected %d hits, %d bounces", len(analysis["events"].hits), len(analysis["events"].bounces))
 
     if cfg.export_csv:
