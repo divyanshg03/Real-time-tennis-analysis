@@ -11,26 +11,52 @@ from utils import read_frames_at
 CONTACT_OFFSETS = (-2, -1, 0, 1)   # frames around the detected hit; the hit frame is only good to about +-1
 
 
-class PoseEstimator:
-    """Wraps an Ultralytics pose model; ``keypoints_for(frame, bbox)`` returns the (17, 3) pose of the person
-    closest to ``bbox`` or None."""
+def map_keypoints_to_frame(kps, x0, y0, scale):
+    """Keypoints found on a crop (origin ``x0, y0``, resized by ``scale``) back to full-frame pixels."""
+    out = np.array(kps, dtype=np.float64, copy=True)
+    out[:, 0] = out[:, 0] / scale + x0
+    out[:, 1] = out[:, 1] / scale + y0
+    return out
 
-    def __init__(self, model_path="yolov8m-pose.pt"):
+
+def crop_window(bbox, frame_shape, margin=0.25, min_height=512):
+    """Crop box around a player and the factor to enlarge it by so a small far-side player is big enough
+    for the pose model. Returns ``(x0, y0, x1, y1, scale)`` in full-frame pixels."""
+    h_img, w_img = frame_shape[:2]
+    bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    x0 = int(max(0, bbox[0] - margin * bw)); x1 = int(min(w_img, bbox[2] + margin * bw))
+    y0 = int(max(0, bbox[1] - margin * bh)); y1 = int(min(h_img, bbox[3] + margin * bh))
+    scale = max(1.0, min_height / max(y1 - y0, 1))
+    return x0, y0, x1, y1, scale
+
+
+class PoseEstimator:
+    """Wraps an Ultralytics pose model. ``keypoints_for(frame, bbox)`` crops around the player, enlarges the
+    crop (far-side players are only ~100 px tall) and returns the (17, 3) pose in full-frame pixels, or None."""
+
+    def __init__(self, model_path="yolov8m-pose.pt", min_crop_height=512):
         from ultralytics import YOLO
         self.model = YOLO(model_path)
+        self.min_crop_height = min_crop_height
 
     def keypoints_for(self, frame, bbox):
-        res = self.model.predict(frame, verbose=False)[0]
+        import cv2
+        x0, y0, x1, y1, scale = crop_window(bbox, frame.shape, min_height=self.min_crop_height)
+        crop = frame[y0:y1, x0:x1]
+        if crop.size == 0:
+            return None
+        if scale > 1.0:
+            crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        res = self.model.predict(crop, verbose=False)[0]
         if res.keypoints is None or res.boxes is None or len(res.boxes) == 0:
             return None
         kps = res.keypoints.data.cpu().numpy()
         boxes = res.boxes.xyxy.cpu().numpy()
-        target = np.array([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
+        # the player is the person nearest the middle of the crop
+        mid = np.array([crop.shape[1] / 2, crop.shape[0] / 2])
         centers = np.column_stack([(boxes[:, 0] + boxes[:, 2]) / 2, (boxes[:, 1] + boxes[:, 3]) / 2])
-        d = np.linalg.norm(centers - target, axis=1)
-        best = int(np.argmin(d))
-        height = max(bbox[3] - bbox[1], 1.0)
-        return kps[best] if d[best] <= height else None   # nobody close enough to be the player
+        best = int(np.argmin(np.linalg.norm(centers - mid, axis=1)))
+        return map_keypoints_to_frame(kps[best], x0, y0, scale)
 
 
 def add_shot_types(shots_df, players, video_path, n_frames, pose, right_handed=(True, True)):
