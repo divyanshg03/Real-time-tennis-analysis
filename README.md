@@ -47,8 +47,20 @@ changing the video or model recomputes instead of silently reusing stale results
   refinement helps but this is not line calling.
 * Static or slowly moving cameras only unless `--court-segment-seconds` is used; broadcast footage
   with cuts to other angles is not handled (segment re-estimation does not detect cuts).
-* Serve contact is detected as a hit near the player; other shot types (forehand/backhand) are
-  not classified.
+* A hit must have the ball within 6.5 m of a player on the court plane (`max_hit_distance_m`), which stops a bounce in front
+  of a player being read as a hit. That limit was tuned on one clip; check it on yours.
+* Bounces are only found where the ball's vertical velocity visibly kinks; on the sample clip 1 of 3 labelled bounces was found.
+* Volleys, slices and drop shots are not separated from groundstrokes (see shot types below).
+
+## Shot types and live mode
+
+* `--shot-types` adds a `shot_type` column (forehand, backhand, serve, overhead) from pose at contact. It downloads a pose
+  model on first use. Use `--left-handed 1,2` for left-handers (1 = far side, 2 = near side). On the sample clip it got the two
+  shots I could verify right (a forehand and a two-handed backhand) and returned `unknown` for the far player, whose pose is too
+  small to read.
+* `python live.py --source 0 --display` (or a stream URL or file) runs the analysis in near real time on a rolling window. Stats
+  trail the picture by about a second and a static camera is assumed. With the default heavy models it processed only 1.8 fps on
+  the development machine (heavily loaded at the time), so use lighter models (`--player-model yolov8s`) and a GPU for real use.
 
 ## Tests and evaluation
 
