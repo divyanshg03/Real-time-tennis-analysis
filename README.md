@@ -50,6 +50,8 @@ changing the video or model recomputes instead of silently reusing stale results
 * A hit must have the ball near a player on the court plane, measured relative to the player's own head so it adapts to the
   camera (`max_hit_distance_ratio`, default 1.1; 0 disables). This stops a bounce in front of a player being read as a hit.
   Checked on the sample clip and on synthetic cameras from low and flat to high and wide; not yet on other real footage.
+* On a low, flat camera a bounce near the far player can out-score a real hit within half a second and displace it (synthetic test: 2 of 9 hits
+  found about 9 frames late). Not seen on the sample clip.
 * Bounces are only found where the ball's vertical velocity visibly kinks; on the sample clip 1 of 3 labelled bounces was found.
 * Volleys, slices and drop shots are not separated from groundstrokes (see shot types below).
 
