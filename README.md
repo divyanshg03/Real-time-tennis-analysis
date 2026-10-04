@@ -47,8 +47,31 @@ changing the video or model recomputes instead of silently reusing stale results
   refinement helps but this is not line calling.
 * Static or slowly moving cameras only unless `--court-segment-seconds` is used; broadcast footage
   with cuts to other angles is not handled (segment re-estimation does not detect cuts).
-* Serve contact is detected as a hit near the player; other shot types (forehand/backhand) are
-  not classified.
+* A hit must have the ball near a player on the court plane, measured relative to the player's own head so it adapts to the
+  camera (`max_hit_distance_ratio`, default 1.1; 0 disables). This stops a bounce in front of a player being read as a hit.
+  Checked on the sample clip and on synthetic cameras from low and flat to high and wide; not yet on other real footage.
+* On a low, flat camera a bounce near the far player can out-score a real hit within half a second and displace it (synthetic test: 2 of 9 hits
+  found about 9 frames late). Not seen on the sample clip.
+* Bounces are only found where the ball's vertical velocity visibly kinks; on the sample clip 1 of 3 labelled bounces was found.
+* Volleys, slices and drop shots are not separated from groundstrokes (see shot types below).
+
+## Shot types and live mode
+
+* `--shot-types` adds a `shot_type` column (forehand, backhand, serve, overhead) from pose at contact. It downloads a pose
+  model on first use. Use `--left-handed 1,2` for left-handers (1 = far side, 2 = near side). On the sample clip it got the two
+  shots I could verify right (a forehand and a two-handed backhand) and returned `unknown` for the far player, whose pose is too
+  small to read.
+* `python live.py --source 0 --display` (or a stream URL or file) runs the analysis in near real time on a rolling window. Stats
+  trail the picture by about a second and a static camera is assumed. It is not real time on every setup. Measured per 1080p frame on
+  an RTX 4060 laptop GPU (models do run on the GPU):
+
+  | Stage | Setting | Time |
+  |---|---|---|
+  | Ball | `--ball-imgsz 1280` (default) / 960 / 640 | 110 / 70 / 39 ms |
+  | Players | `yolov8x` (default) / `yolov8s` / `yolov8n` | 91 / 56 / 41 ms |
+
+  The defaults come to about 5 fps end to end. With `--ball-imgsz 640 --player-model yolov8n --player-every 3` the cost is about
+  53 ms per frame (roughly 19 fps), still short of 30 fps, and the ball detector's accuracy at the smaller size has not been checked.
 
 ## Browser simulator
 

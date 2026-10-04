@@ -33,12 +33,22 @@ class Config:
     # Events / physics
     hit_window_seconds: float = 0.25
     min_hit_separation_seconds: float = 0.5
+    # A hit needs the ball near a player on the court plane. The ball is airborne, so its projection is displaced
+    # by parallax; the player's own head (about 1.8 m up) shows how much for this camera, so the limit is a ratio
+    # of ball distance to head distance and needs no per-camera tuning. Real hits on the sample clip were 0.4-0.94,
+    # bounces in front of a player 1.2-1.7; synthetic hits are about 0.5 in every camera tried. 0 disables it.
+    max_hit_distance_ratio: float = 1.1
     serve_gap_seconds: float = 4.0
     max_flight_seconds: float = 3.0   # a shot's bounce must occur within this time of the hit
     assumed_contact_height_m: float = 1.0
     max_ball_speed_kmh: float = 260.0
     max_player_speed_kmh: float = 45.0
     player_smooth_window: int = 5
+
+    # Shot type (optional: needs pose weights, downloaded on first use)
+    shot_types: bool = False
+    pose_model: str = "yolov8m-pose.pt"
+    left_handed: str = ""            # roles that are left-handed, e.g. "2" or "1,2" (1 = far, 2 = near)
 
     # Output
     export_csv: bool = True

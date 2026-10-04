@@ -2,22 +2,41 @@
   "video": "input_videos/input_video.mp4",
   "fps": 30.0,
   "frame_count": 214,
-  "hits": [10, 95, 131, 172],
-  "bounces": [],
+  "hits": [
+    10,
+    56,
+    95,
+    130,
+    182
+  ],
+  "bounces": [
+    81
+  ],
   "shot_speeds": [],
   "_provenance": {
-    "labelled_by": "Claude, by eye from player-centred full-resolution crops (independent of the pipeline output). NOT verified by a human.",
+    "labelled_by": "Claude, by eye from ball-centred full-resolution crops and a plot of the ball trajectory. NOT verified by a human.",
     "complete": false,
     "confidence": {
-      "10": "high (+-1): ball descends to the near player's racket across 8-10, leaves upward 11-13",
-      "95": "high (+-1): ball beside the hand at 94, motion-blurred and already leaving at 95",
-      "131": "medium (+-2): far player lunges low, ball at the racket tip at 130-131, then rolls slowly away",
-      "172": "medium-high (+-2): ball at the racket head at 172, then drifts away slowly"
+      "hit 10": "high (+-1): ball descends to the near player's racket across frames 8-10 and leaves upward 11-13",
+      "hit 56": "medium-high (+-1): far player's racket sweeps through the ball at 56; the ball trajectory turns at 55",
+      "hit 95": "high (+-1): ball beside the hand at 94, motion-blurred and already leaving at 95",
+      "hit 130": "medium-high (+-1): racket head meets the ball at 129-130, ball then sits low beside his foot",
+      "bounce 36": "DOWNGRADED to uncertain: the ball looked squashed on the far baseline at 35-38, but the vertical velocity shows no kink there (drop ~0.9 against a threshold of ~15), so it may only have passed over the line",
+      "bounce 81": "high (+-1): long blur streak 76-80, then sharp and slow from 81 after crossing the near service line",
+      "bounce 109": "DOWNGRADED to uncertain: the ball looked flattened on the far service line at 109, but the vertical velocity shows no kink (drop below zero), so it may only have passed over the line",
+      "hit 182": "medium-high (+-1): corrected from 172. The ball sits sharp in front of the player through 178-181 while he swings; the racket meets it at 182 and it leaves as a fast streak from 183. At 168-172 the ball only lines up with the racket because it is coming toward the camera"
     },
     "unlabelled_ambiguous": [
-      "frames 52-63: far player swings with the ball low and slow beside his left foot; contact not identifiable",
-      "all bounces: not labelled, ball too small to place the ground contact confidently"
+      "possible bounce near frame 134: ball low beside the far player's foot after the scoop",
+      "frames 146-165: the ball moves slowly over the net region; no bounce could be placed",
+      "no shot speeds: no radar or broadcast speed is visible in the clip",
+      "possible bounce near frames 172-174: ball arrives low in front of the near player and then hovers until the swing at 182",
+      "bounces 36 and 109 are listed under uncertain_bounces and are not scored; only bounce 81 (a clear kink and a blur-to-sharp change) is a firm label"
     ],
-    "notes": "Because the label set is incomplete, event precision against it is NOT meaningful (unlabelled real events count as false positives); use recall for hits. Swings and ball flight look slow throughout the clip: it may be a slow-motion replay, in which case absolute speeds from 30 fps are not real-time speeds."
-  }
+    "notes": "Because the label set is incomplete, precision against it is NOT meaningful (unlabelled real events count as false positives); use recall. Slow-motion is now thought unlikely: the players' top running speeds come out at about 21 km/h, plausible in real time and impossible if the clip were several times slowed."
+  },
+  "uncertain_bounces": [
+    36,
+    109
+  ]
 }

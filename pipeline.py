@@ -13,6 +13,7 @@ import os
 import cv2
 import numpy as np
 
+from analytics.events import ball_centers
 from analytics import (detect_events, compute_shots, build_frame_stats, summarize,
                        export_tables, export_heatmaps)
 from config import Config
@@ -21,11 +22,13 @@ from court_line_detector.court_line_detector import (CourtLineDetector, CourtMod
 from mini_court import MiniCourt
 from trackers import PlayerTracker, BallTracker, clean_ball_positions
 from utils import (get_video_info, iter_video, read_frames_at, VideoSink, make_meta,
-                   draw_player_stats_frame)
+                   draw_player_stats_frame, get_foot_position)
 
 log = logging.getLogger(__name__)
 
 BOUNCE_MARKER_FRAMES = 15
+SERVE_DISTANCE_FACTOR = 2.0   # serves are struck higher (about 1.5-1.7 head distances, versus ~0.5 for a rally hit)
+MIN_HEAD_DISPLACEMENT_M = 1.0  # guards against a degenerate head/foot projection
 
 
 def build_court_model(cfg: Config, info):
@@ -43,14 +46,44 @@ def build_court_model(cfg: Config, info):
     )
 
 
+def _court_distance_gate(ball_arr, players, court_model, max_ratio):
+    """frame -> True when the ball is near a player on the court plane.
+
+    "Near" is relative to that player's own head: both the ball and the head are airborne points, so both are
+    displaced by the same camera parallax. The ball must be within ``max_ratio`` times the head's displacement
+    from the player's feet (``SERVE_DISTANCE_FACTOR`` times more in the serve window).
+    """
+    if not max_ratio:
+        return None
+    centers = ball_centers(ball_arr)
+
+    def gate(frame, serve_like=False):
+        limit = max_ratio * (SERVE_DISTANCE_FACTOR if serve_like else 1.0)
+        c = centers[frame]
+        if np.isnan(c[0]):
+            return False
+        H = court_model.homography_for_frame(frame)
+        bx, by = H.pixel_to_court_point((c[0], c[1]))
+        for bbox in players[frame].values():
+            fx, fy = H.pixel_to_court_point(get_foot_position(bbox))
+            hx, hy = H.pixel_to_court_point(((bbox[0] + bbox[2]) / 2, bbox[1]))
+            head = max(np.hypot(hx - fx, hy - fy), MIN_HEAD_DISPLACEMENT_M)
+            if np.hypot(bx - fx, by - fy) <= limit * head:
+                return True
+        return False
+
+    return gate
+
+
 def analyse(cfg: Config, info, player_detections, ball_detections, court_model: CourtModel):
     """Pure analysis: detections in, tables out (no video or models involved)."""
     players = PlayerTracker.select_court_players(
         player_detections, court_model.homography_for_frame)
     ball_arr = clean_ball_positions(ball_detections, (info.width, info.height),
                                     cfg.ball_max_jump_frac, cfg.ball_max_gap_frames)
+    gate = _court_distance_gate(ball_arr, players, court_model, cfg.max_hit_distance_ratio)
     events = detect_events(ball_arr, players, info.fps, info.height,
-                           cfg.hit_window_seconds, cfg.min_hit_separation_seconds)
+                           cfg.hit_window_seconds, cfg.min_hit_separation_seconds, hit_gate=gate)
     result = compute_shots(events, ball_arr, players, court_model.homography_for_frame, info.fps, cfg)
     frame_stats = build_frame_stats(result["shots"], len(ball_arr))
     summary = summarize(result["shots"], result["speeds"], result["tracks"], info.fps,
@@ -95,7 +128,7 @@ def render(cfg: Config, info, analysis, court_model: CourtModel, player_tracker,
             sink.write(frame)
 
 
-def run(cfg: Config, player_tracker=None, ball_tracker=None, court_model=None):
+def run(cfg: Config, player_tracker=None, ball_tracker=None, court_model=None, pose=None):
     info = get_video_info(cfg.input_video)
     log.info("video: %dx%d @ %.3f fps, %d frames", info.width, info.height, info.fps, info.frame_count)
 
@@ -121,6 +154,12 @@ def run(cfg: Config, player_tracker=None, ball_tracker=None, court_model=None):
                                                  cfg.refresh_cache)
 
     analysis = analyse(cfg, info, player_detections, ball_detections, court_model)
+    if cfg.shot_types:
+        from analytics.pose import PoseEstimator, add_shot_types
+        lefties = {int(r) for r in cfg.left_handed.split(",") if r.strip()}
+        analysis["shots"] = add_shot_types(
+            analysis["shots"], analysis["players"], cfg.input_video, len(analysis["ball"]),
+            pose or PoseEstimator(cfg.pose_model), right_handed=(1 not in lefties, 2 not in lefties))
     log.info("detected %d hits, %d bounces", len(analysis["events"].hits), len(analysis["events"].bounces))
 
     if cfg.export_csv:
