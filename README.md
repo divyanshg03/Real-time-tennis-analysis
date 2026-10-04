@@ -47,8 +47,9 @@ changing the video or model recomputes instead of silently reusing stale results
   refinement helps but this is not line calling.
 * Static or slowly moving cameras only unless `--court-segment-seconds` is used; broadcast footage
   with cuts to other angles is not handled (segment re-estimation does not detect cuts).
-* A hit must have the ball within 6.5 m of a player on the court plane (`max_hit_distance_m`), which stops a bounce in front
-  of a player being read as a hit. That limit was tuned on one clip; check it on yours.
+* A hit must have the ball near a player on the court plane, measured relative to the player's own head so it adapts to the
+  camera (`max_hit_distance_ratio`, default 1.1; 0 disables). This stops a bounce in front of a player being read as a hit.
+  Checked on the sample clip and on synthetic cameras from low and flat to high and wide; not yet on other real footage.
 * Bounces are only found where the ball's vertical velocity visibly kinks; on the sample clip 1 of 3 labelled bounces was found.
 * Volleys, slices and drop shots are not separated from groundstrokes (see shot types below).
 
