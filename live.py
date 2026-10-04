@@ -36,7 +36,8 @@ class LiveAnalyzer:
     """Feed it frames with ``push``; read the latest result from ``self.analysis``."""
 
     def __init__(self, cfg, info, player_tracker, ball_tracker, court_model,
-                 window_seconds=12.0, update_every=15):
+                 window_seconds=12.0, update_every=15, player_every=1):
+        self.player_every = max(1, int(player_every))
         self.cfg, self.info = cfg, info
         self.player_tracker, self.ball_tracker, self.court_model = player_tracker, ball_tracker, court_model
         self.window = max(int(window_seconds * info.fps), 30)
@@ -48,7 +49,10 @@ class LiveAnalyzer:
         self.analysis_len = 0        # number of frames the latest analysis covered
 
     def push(self, frame):
-        self.players.append(self.player_tracker.detect_frame(frame))
+        # The player model is the expensive one. Skipped frames get an empty detection and the analysis
+        # interpolates short gaps in the chosen player boxes, so the ball (which needs every frame) is unaffected.
+        run_players = self.frames_seen % self.player_every == 0
+        self.players.append(self.player_tracker.detect_frame(frame) if run_players else {})
         self.balls.append(self.ball_tracker.detect_frame(frame))
         self.frames_seen += 1
         enough = len(self.players) >= int(2 * self.info.fps)
@@ -93,7 +97,7 @@ def open_source(source):
 
 
 def run_live(cfg, source, display=False, output=None, max_frames=None, warmup_seconds=2.0,
-             player_tracker=None, ball_tracker=None, court_predict=None, window_seconds=12.0, update_every=15):
+             player_tracker=None, ball_tracker=None, court_predict=None, window_seconds=12.0, update_every=15, player_every=1):
     cap, info = open_source(source)
     log.info("source %s: %dx%d @ %.1f fps", source, info.width, info.height, info.fps)
     player_tracker = player_tracker or PlayerTracker(cfg.player_model)
@@ -118,7 +122,8 @@ def run_live(cfg, source, display=False, output=None, max_frames=None, warmup_se
         court_model.segments[-1]["end"] = 10 ** 9      # static camera: one homography for every frame
     log.info("court located: %s", court_model.quality)
 
-    live = LiveAnalyzer(cfg, info, player_tracker, ball_tracker, court_model, window_seconds, update_every)
+    live = LiveAnalyzer(cfg, info, player_tracker, ball_tracker, court_model, window_seconds, update_every,
+                        player_every)
     mini = MiniCourt(warm[0])
     sink = VideoSink(output, info.fps, (info.width, info.height)) if output else None
 
@@ -168,6 +173,8 @@ def main(argv=None):
     p.add_argument("--max-frames", type=int, default=None)
     p.add_argument("--window-seconds", type=float, default=12.0)
     p.add_argument("--update-every", type=int, default=15, help="re-run the analysis every N frames")
+    p.add_argument("--player-every", type=int, default=1,
+                   help="detect players on every Nth frame (2-3 roughly halves the cost; gaps are interpolated)")
     p.add_argument("--player-model", default=d.player_model)
     p.add_argument("--ball-model", default=d.ball_model)
     p.add_argument("--court-model", default=d.court_model)
@@ -177,7 +184,8 @@ def main(argv=None):
     cfg = Config(player_model=a.player_model, ball_model=a.ball_model, court_model=a.court_model,
                  court_keypoints_json=a.court_keypoints_json)
     live = run_live(cfg, a.source, a.display, a.output or None, a.max_frames,
-                    window_seconds=a.window_seconds, update_every=a.update_every)
+                    window_seconds=a.window_seconds, update_every=a.update_every,
+                    player_every=a.player_every)
     if live.analysis is not None:
         print(live.analysis["summary"])
 

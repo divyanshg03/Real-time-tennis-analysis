@@ -11,12 +11,12 @@ from trackers import BallTracker, PlayerTracker
 class StreamPlayers(PlayerTracker):
     """Replays the synthetic detections one frame per call, like a detector would on a live stream."""
 
-    def __init__(self, data):
+    def __init__(self, data, stride=1):
         super().__init__(None)
-        self.data, self.i = data, 0
+        self.data, self.i, self.stride = data, 0, stride   # stride: live mode calls it every Nth frame
 
     def detect_frame(self, frame):
-        d = self.data[min(self.i, len(self.data) - 1)]
+        d = self.data[min(self.i * self.stride, len(self.data) - 1)]
         self.i += 1
         return d
 
@@ -41,12 +41,13 @@ def _write_video(path, n, fps=30.0, size=(S.W, S.H)):
 
 
 def _run(tmp_path, output=None, **kw):
+    stride = kw.get("player_every", 1)
     sc = S.build_scene(rallies=((30, 4),))
     video = str(tmp_path / "stream.avi")
     _write_video(video, sc["n_frames"])
     kp = S.keypoints_flat()
     lv = live.run_live(Config(), video, output=output,
-                       player_tracker=StreamPlayers(sc["players"]),
+                       player_tracker=StreamPlayers(sc["players"], stride),
                        ball_tracker=StreamBall(sc["ball"]),
                        court_predict=lambda img: kp, **kw)
     return sc, lv
@@ -82,3 +83,12 @@ def test_live_fails_clearly_on_a_bad_source():
     except FileNotFoundError:
         return
     raise AssertionError("expected FileNotFoundError")
+
+
+def test_skipping_player_detection_keeps_the_hits_and_saves_calls(tmp_path):
+    sc, every1 = _run(tmp_path)
+    calls_full = every1.player_tracker.i
+    sc, every3 = _run(tmp_path, player_every=3)
+    assert every3.player_tracker.i < calls_full * 0.5
+    m = event_metrics(every3.analysis["events"].hits, sc["truth"]["hits"], 3)
+    assert m["recall"] >= 0.75
