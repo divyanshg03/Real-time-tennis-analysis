@@ -73,6 +73,13 @@ changing the video or model recomputes instead of silently reusing stale results
   The defaults come to about 5 fps end to end. With `--ball-imgsz 640 --player-model yolov8n --player-every 3` the cost is about
   53 ms per frame (roughly 19 fps), still short of 30 fps, and the ball detector's accuracy at the smaller size has not been checked.
 
+## Browser simulator
+
+`simulator/index.html` is a single self-contained page (no server, no install): open it in a browser.
+It runs the same cleaning, homography, hit/bounce and speed logic, ported to JavaScript, on a synthetic rally
+with known truth, and scores the result live. Use it to see what each stage buys: turn ball cleaning off,
+hardcode 24 fps, or raise the detector noise. It is not real footage and says nothing about model accuracy.
+
 ## Tests and evaluation
 
 ```bash

@@ -1,0 +1,813 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tennis Rally Simulator</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working surface. Video frame + timeline on the left, court view and scores on the right,
+   controls and per-shot table underneath. Colours follow a hard-court palette: slate ink, court blue,
+   hit = hot orange, bounce = amber. */
+:root{
+  --bg:#edf1f4; --surface:#ffffff; --surface2:#f5f8fa; --ink:#14212b; --muted:#56687a; --line:#d2dce3;
+  --accent:#1f5f8b; --accent-ink:#ffffff; --hit:#d9480f; --bounce:#a8690a; --ok:#1d7a4d; --bad:#b3261e;
+  --kept:#2f8f5b; --interp:#c98a1b; --none:#b8c4cc; --removed:#c23a30;
+  --font-display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --font-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-data:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d151b; --surface:#152029; --surface2:#1b2832; --ink:#e5edf2; --muted:#8da1af; --line:#293842;
+  --accent:#62aad6; --accent-ink:#06121a; --hit:#ff8a5b; --bounce:#f2b84b; --ok:#4cc38a; --bad:#ff7b72;
+  --kept:#3fb77a; --interp:#e0a63a; --none:#3a4a55; --removed:#ff6b60; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d151b; --surface:#152029; --surface2:#1b2832; --ink:#e5edf2; --muted:#8da1af; --line:#293842;
+  --accent:#62aad6; --accent-ink:#06121a; --hit:#ff8a5b; --bounce:#f2b84b; --ok:#4cc38a; --bad:#ff7b72;
+  --kept:#3fb77a; --interp:#e0a63a; --none:#3a4a55; --removed:#ff6b60; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.45;
+  padding-inline:16px;padding-block:20px 40px}
+.wrap{max-width:1280px;margin-inline:auto;display:flex;flex-direction:column;gap:16px}
+h1{font-family:var(--font-display);font-weight:700;font-size:clamp(30px,5vw,44px);line-height:1;margin:0;letter-spacing:.01em;text-wrap:balance}
+h2{font-family:var(--font-display);font-weight:600;font-size:20px;letter-spacing:.04em;text-transform:uppercase;margin:0 0 10px}
+.sub{color:var(--muted);max-width:75ch;margin:6px 0 0}
+.note{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:6px;
+  padding:10px 14px;color:var(--muted);max-width:100ch}
+.note b{color:var(--ink);font-weight:600}
+.top{display:flex;gap:16px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:16px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
+canvas{display:block;max-width:100%}
+#view{width:100%;height:auto;aspect-ratio:16/9;border-radius:6px;background:#26485f}
+.transport{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.transport input[type=range]{flex:1 1 200px;min-width:120px}
+.time{font-family:var(--font-data);font-size:13px;color:var(--muted);min-width:150px;text-align:right}
+button{font:inherit;font-weight:500;background:var(--surface2);color:var(--ink);border:1px solid var(--line);border-radius:6px;
+  padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#timeline{width:100%;height:150px;margin-top:12px;cursor:pointer}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.side{display:flex;flex-direction:column;gap:16px}
+.side .panel{padding-bottom:10px}
+#mini{width:100%;max-width:250px;height:auto;aspect-ratio:250/560;margin-inline:auto;border-radius:6px;background:var(--surface2);border:1px solid var(--line)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tile{background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;min-width:0}
+.tile .k{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tile .v{font-family:var(--font-display);font-weight:600;font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile .s{font-size:12px;color:var(--muted)}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+fieldset{border:1px solid var(--line);border-radius:8px;padding:10px 12px 12px;margin:0;min-width:0;background:var(--surface)}
+legend{font-family:var(--font-display);font-weight:600;letter-spacing:.05em;text-transform:uppercase;font-size:15px;padding-inline:6px}
+.row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;margin-top:8px}
+.row label{font-size:13.5px}
+.row output{font-family:var(--font-data);font-size:12.5px;color:var(--muted);text-align:right;min-width:52px}
+.row input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.chk{display:flex;gap:8px;align-items:flex-start;margin-top:8px;font-size:13.5px}
+.chk input{margin-top:3px;accent-color:var(--accent)}
+.chk small{display:block;color:var(--muted);font-size:12px}
+.presets{display:flex;flex-wrap:wrap;gap:8px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+.tablewrap{overflow-x:auto}
+th,td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+th{font-family:var(--font-display);letter-spacing:.05em;text-transform:uppercase;font-size:13px;color:var(--muted);font-weight:600}
+th:first-child,td:first-child,th.l,td.l{text-align:left}
+td{font-family:var(--font-data);font-size:12.5px}
+tr.cur td{background:var(--surface2)}
+.good{color:var(--ok)}.warn{color:var(--bounce)}.bad{color:var(--bad)}
+.map{font-size:13px;color:var(--muted);columns:2 280px;column-gap:24px}
+.map code{font-family:var(--font-data);font-size:12px;color:var(--ink)}
+@media (max-width:900px){.main{grid-template-columns:minmax(0,1fr)}.side{flex-direction:row;flex-wrap:wrap}.side>*{flex:1 1 250px}.time{text-align:left}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>Tennis Rally Simulator</h1>
+      <p class="sub">Break the detections and watch the analysis hold up or fall apart. Every number on this page comes from the same hit, bounce, homography and speed logic as the Python pipeline.</p>
+    </div>
+    <div class="presets" role="group" aria-label="Presets">
+      <button id="p-clean">Clean footage</button>
+      <button id="p-broadcast" class="primary">Typical broadcast</button>
+      <button id="p-rough">Rough conditions</button>
+      <button id="p-old">Old pipeline</button>
+    </div>
+  </div>
+  <div class="note"><b>Synthetic rally, simulated detections.</b> The players, ball and camera are generated with a known truth so every result can be scored. This shows what the logic does, not how accurate the trained models are on real video.</div>
+
+  <div class="main">
+    <div class="panel">
+      <canvas id="view" width="1920" height="1080" aria-label="Simulated broadcast view with tracking overlay"></canvas>
+      <div class="transport">
+        <button id="play" class="primary" aria-label="Play or pause">Pause</button>
+        <button id="restart">Restart</button>
+        <select id="rate" aria-label="Playback speed">
+          <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option>
+        </select>
+        <input id="scrub" type="range" min="0" max="100" value="0" step="1" aria-label="Frame">
+        <span class="time" id="time"></span>
+      </div>
+      <canvas id="timeline" aria-label="Timeline of ball visibility and detected events"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--kept)"></i>ball kept</span>
+        <span><i style="background:var(--interp)"></i>filled in</span>
+        <span><i style="background:var(--removed)"></i>removed as false</span>
+        <span><i style="background:var(--none)"></i>not detected</span>
+        <span><i style="background:var(--hit)"></i>hit (hollow = truth)</span>
+        <span><i style="background:var(--bounce)"></i>bounce (hollow = truth)</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel">
+        <h2>Court</h2>
+        <canvas id="mini" width="250" height="560" aria-label="Top-down court view"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Score against truth</h2>
+    <div class="tiles" id="tiles"></div>
+  </div>
+
+  <div class="controls">
+    <fieldset><legend>Scene</legend>
+      <div class="row"><label for="fps">Video frame rate</label><output id="o-fps"></output>
+        <select id="fps" style="grid-column:1/-1"><option>24</option><option selected>30</option><option>60</option></select></div>
+      <div class="row"><label for="flight">Ball flight time</label><output id="o-flight"></output>
+        <input id="flight" type="range" min="0.6" max="1.6" step="0.05" value="1.0"></div>
+      <div class="row"><label for="points">Points in the clip</label><output id="o-points"></output>
+        <select id="points" style="grid-column:1/-1"><option value="5,4" selected>Two points (5 and 4 shots)</option><option value="6">One long rally (6 shots)</option><option value="3,3,3">Three short points</option></select></div>
+    </fieldset>
+    <fieldset><legend>Detector problems</legend>
+      <div class="row"><label for="drop">Missed ball detections</label><output id="o-drop"></output>
+        <input id="drop" type="range" min="0" max="45" step="1" value="12"></div>
+      <div class="row"><label for="fpn">Random false positives</label><output id="o-fpn"></output>
+        <input id="fpn" type="range" min="0" max="40" step="1" value="6"></div>
+      <div class="row"><label for="stat">Sign detected as the ball</label><output id="o-stat"></output>
+        <input id="stat" type="range" min="0" max="70" step="1" value="25"></div>
+      <div class="row"><label for="kp">Court keypoint error</label><output id="o-kp"></output>
+        <input id="kp" type="range" min="0" max="8" step="0.5" value="1.5"></div>
+      <div class="presets" style="margin-top:10px"><button id="reroll">Reroll the noise</button></div>
+    </fieldset>
+    <fieldset><legend>Analysis</legend>
+      <label class="chk"><input id="clean" type="checkbox" checked><span>Ball cleaning<small>Static-spot removal, outlier rejection, short-gap fill</small></span></label>
+      <label class="chk"><input id="old24" type="checkbox"><span>Hardcode 24 fps in speeds<small>The old behaviour. Compare speed error against the true rate</small></span></label>
+      <div class="row"><label for="ch">Assumed contact height</label><output id="o-ch"></output>
+        <input id="ch" type="range" min="0.4" max="1.8" step="0.05" value="1.0"></div>
+    </fieldset>
+    <fieldset><legend>Overlays</legend>
+      <label class="chk"><input id="ov-raw" type="checkbox" checked><span>Raw detections<small>Orange rings; a red cross marks ones cleaning removed</small></span></label>
+      <label class="chk"><input id="ov-court" type="checkbox" checked><span>Estimated court<small>Dashed lines from the noisy keypoints. Drift from the white lines is the court error</small></span></label>
+      <label class="chk"><input id="ov-truth" type="checkbox"><span>Truth on the court view<small>Hollow rings where bounces really landed</small></span></label>
+    </fieldset>
+  </div>
+
+  <div class="panel">
+    <h2>Shots</h2>
+    <div class="tablewrap"><table id="shots"><thead><tr>
+      <th>#</th><th>Time</th><th class="l">Hitter</th><th class="l">Type</th><th>Estimated</th><th>True</th><th>Error</th><th class="l">Method</th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="panel">
+    <h2>Where each piece lives</h2>
+    <div class="map">
+      <p><code>fitHomography</code> / <code>CourtHomography</code> in <code>court_geometry.py</code>: pixels to court meters.</p>
+      <p><code>suppressStatic</code>, <code>rejectOutliers</code>, <code>interpolateGaps</code> in <code>trackers/ball_tracker.py</code>.</p>
+      <p><code>selectPlayers</code> in <code>trackers/player_tracker.py</code>: players chosen by court position, so the umpire and ball kid are ignored.</p>
+      <p><code>detectEvents</code>, <code>refineKink</code> in <code>analytics/events.py</code>: hits, bounces, sub-frame bounce time.</p>
+      <p><code>computeShots</code> in <code>analytics/stats.py</code>: serves, rallies, in/out, speed from hit to bounce.</p>
+      <p>Scoring mirrors <code>evaluation/metrics.py</code>: event F1 with a frame tolerance and mean absolute percentage speed error.</p>
+    </div>
+  </div>
+</div>
+
+<script id="core">
+(function (root) {
+'use strict';
+const W = 1920, H = 1080;
+const CW = 10.97, L = 23.76, NET_Y = L / 2, ALLEY = 1.37, SINGLES_W = 8.23, SERVICE = 5.48;
+const KP = [[0,0],[CW,0],[0,L],[CW,L],[ALLEY,0],[ALLEY,L],[CW-ALLEY,0],[CW-ALLEY,L],
+  [ALLEY,SERVICE],[ALLEY+SINGLES_W,SERVICE],[ALLEY,L-SERVICE],[ALLEY+SINGLES_W,L-SERVICE],[CW/2,SERVICE],[CW/2,L-SERVICE]];
+const LINES = [[0,2],[4,5],[6,7],[1,3],[0,1],[2,3],[8,9],[10,11],[12,13]];
+const SIGN = [1339, 423];
+
+/* ---------- small numeric helpers ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function gauss(r){let u=0;while(!u)u=r();const v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+const isn = Number.isNaN;
+function hyp(a,b){return Math.sqrt(a*a+b*b);}
+
+function solve(A,b){
+  const n=b.length, M=A.map((r,i)=>r.concat([b[i]]));
+  for(let c=0;c<n;c++){
+    let p=c;for(let r=c+1;r<n;r++)if(Math.abs(M[r][c])>Math.abs(M[p][c]))p=r;
+    [M[c],M[p]]=[M[p],M[c]];
+    for(let r=c+1;r<n;r++){const f=M[r][c]/M[c][c];for(let k=c;k<=n;k++)M[r][k]-=f*M[c][k];}
+  }
+  const x=new Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){let s=M[i][n];for(let k=i+1;k<n;k++)s-=M[i][k]*x[k];x[i]=s/M[i][i];}
+  return x;
+}
+/* Least-squares homography mapping src -> dst (h33 = 1), like cv2.findHomography without RANSAC. */
+function fitHomography(src,dst){
+  const S=1000, AtA=Array.from({length:8},()=>new Array(8).fill(0)), Atb=new Array(8).fill(0);
+  const acc=(r,b)=>{for(let i=0;i<8;i++){Atb[i]+=r[i]*b;for(let j=0;j<8;j++)AtA[i][j]+=r[i]*r[j];}};
+  for(let i=0;i<src.length;i++){
+    const x=src[i][0],y=src[i][1],u=dst[i][0]/S,v=dst[i][1]/S;
+    acc([x,y,1,0,0,0,-u*x,-u*y],u); acc([0,0,0,x,y,1,-v*x,-v*y],v);
+  }
+  const h=solve(AtA,Atb);
+  return [[h[0]*S,h[1]*S,h[2]*S],[h[3]*S,h[4]*S,h[5]*S],[h[6],h[7],1]];
+}
+function inv3(m){
+  const [a,b,c]=m[0],[d,e,f]=m[1],[g,h,i]=m[2];
+  const A=e*i-f*h,B=-(d*i-f*g),C=d*h-e*g,det=a*A+b*B+c*C;
+  return [[A/det,-(b*i-c*h)/det,(b*f-c*e)/det],[B/det,(a*i-c*g)/det,-(a*f-c*d)/det],[C/det,-(a*h-b*g)/det,(a*e-b*d)/det]];
+}
+function apply(m,x,y){const w=m[2][0]*x+m[2][1]*y+m[2][2];return [(m[0][0]*x+m[0][1]*y+m[0][2])/w,(m[1][0]*x+m[1][1]*y+m[1][2])/w];}
+
+const CAM = fitHomography([[0,0],[CW,0],[0,L],[CW,L]],[[560,220],[1360,220],[260,960],[1660,960]]); // true camera, court -> pixels
+function toPix(x,y){return apply(CAM,x,y);}
+function scalePx(x,y){const a=toPix(x,y),b=toPix(x+1,y);return hyp(b[0]-a[0],b[1]-a[1]);}
+
+/* ---------- synthetic rally with ground truth (port of tests/synthetic.py) ---------- */
+function playerPos(role,f,fps){
+  const y=role===1?-1.5:L+1.5, x=CW/2+2*Math.sin(2*Math.PI*(f/fps)/4+(role===1?0:1));
+  return [x,y];
+}
+function playerBox(role,f,fps){
+  const p=playerPos(role,f,fps),px=toPix(p[0],p[1]),s=scalePx(p[0],p[1]);
+  return [px[0]-.3*s,px[1]-1.85*s,px[0]+.3*s,px[1]];
+}
+function ballBox(g,h){
+  const px=toPix(g[0],g[1]),s=scalePx(g[0],g[1]),bottom=px[1]-h*s,r=6;
+  return [px[0]-r,bottom-2*r,px[0]+r,bottom];
+}
+function pointBox(x,y,h){const px=toPix(x,y),s=scalePx(x,y);return [px[0]-.27*s,px[1]-h*s,px[0]+.27*s,px[1]];}
+
+function buildScene(p){
+  const fps=p.fps, rng=mulberry32(p.seed|0), contactH=1.0;
+  const flight=Math.max(8,Math.round(p.flightSec*fps)), toss=Math.round(.5*fps), tail=Math.round(.27*fps);
+  const rallies=[]; let cursor=toss+Math.round(.4*fps), lastEnd=0;
+  p.points.forEach(nh=>{
+    rallies.push([cursor,nh]);
+    const lastHit=cursor+(nh-1)*flight; lastEnd=lastHit+Math.round(.7*flight)+tail;
+    cursor=lastEnd+Math.round(5*fps)+toss;
+  });
+  const n=lastEnd+Math.round(1.3*fps);
+  const ball=new Array(n).fill(null), ground=new Array(n).fill(null), height=new Array(n).fill(0);
+  const truth={hits:[],hitters:[],bounces:[],serves:[],speeds:[]};
+  rallies.forEach(([first,nh])=>{
+    const hitFrames=Array.from({length:nh},(_,k)=>first+k*flight), hitters=Array.from({length:nh},(_,k)=>k%2===0?2:1);
+    const server=playerPos(hitters[0],first,fps);
+    for(let t=0;t<toss;t++){const f=first-toss+t,u=t/(toss-1),h=1.6+1.2*(1-(1-u)*(1-u));ball[f]=ballBox(server,h);ground[f]=server;height[f]=h;}
+    for(let k=0;k<nh;k++){
+      const f0=hitFrames[k],role=hitters[k],p0=playerPos(role,f0,fps);
+      let f1,p1;
+      if(k+1<nh){f1=hitFrames[k+1];p1=playerPos(hitters[k+1],f1,fps);}
+      else{f1=f0+flight;p1=[CW+5,role===2?-8:L+8];}
+      const fb=f0+Math.round(.7*(f1-f0)), h0=k===0?2.6:contactH, fLast=(k+1<nh)?f1:fb+tail;
+      for(let f=f0;f<=fLast&&f<n;f++){
+        const s=(f-f0)/(f1-f0), g=[p0[0]+s*(p1[0]-p0[0]),p0[1]+s*(p1[1]-p0[1])]; let hgt;
+        if(f<=fb){const u=(f-f0)/(fb-f0);hgt=h0*(1-u)+1.2*4*u*(1-u);}
+        else{const u=(f-fb)/(f1-fb);hgt=contactH*u+.8*4*u*(1-u);}
+        ball[f]=ballBox(g,hgt);ground[f]=g;height[f]=hgt;
+      }
+      truth.hits.push(f0);truth.hitters.push(role);truth.bounces.push(fb);truth.serves.push(k===0);
+      const bg=[p0[0]+(fb-f0)/(f1-f0)*(p1[0]-p0[0]),p0[1]+(fb-f0)/(f1-f0)*(p1[1]-p0[1])];
+      truth.speeds.push(hyp(hyp(bg[0]-p0[0],bg[1]-p0[1]),h0)/((fb-f0)/fps)*3.6);
+      truth.bounceGround=truth.bounceGround||[];truth.bounceGround.push(bg);
+    }
+  });
+  // detections
+  const det=new Array(n).fill(null);
+  for(let f=0;f<n;f++){
+    if(ball[f]&&rng()>=p.dropout){
+      const j=[gauss(rng),gauss(rng)];
+      det[f]={box:[ball[f][0]+j[0],ball[f][1]+j[1],ball[f][2]+j[0],ball[f][3]+j[1]],kind:'ball'};
+    }else if(rng()<p.staticRate){
+      det[f]={box:[SIGN[0]-5,SIGN[1]-5,SIGN[0]+5,SIGN[1]+5],kind:'sign'};
+    }
+  }
+  for(let k=0;k<p.falsePos;k++){
+    const f=Math.floor(rng()*n),x=100+rng()*(W-200),y=100+rng()*(H-200);
+    det[f]={box:[x,y,x+12,y+12],kind:'fp'};
+  }
+  const persons=[];
+  for(let f=0;f<n;f++){
+    persons.push([playerBox(1,f,fps),playerBox(2,f,fps),pointBox(-3,NET_Y,1.7),pointBox(CW+1,L+9,1.4)]);
+  }
+  return {n,fps,flight,ball,ground,height,det,persons,truth,rallies};
+}
+
+/* ---------- ball cleaning (trackers/ball_tracker.py) ---------- */
+function detArray(det){const a=new Float64Array(det.length*4).fill(NaN);det.forEach((d,i)=>{if(d)for(let c=0;c<4;c++)a[i*4+c]=d.box[c];});return a;}
+function cx(a,i){return (a[i*4]+a[i*4+2])/2;} function cy(a,i){return (a[i*4+1]+a[i*4+3])/2;}
+function validIdx(a,n){const v=[];for(let i=0;i<n;i++)if(!isn(a[i*4]))v.push(i);return v;}
+function nanRow(a,i){a[i*4]=a[i*4+1]=a[i*4+2]=a[i*4+3]=NaN;}
+
+function suppressStatic(arr,n,radius=6,minRuns=3,runGap=5){
+  const a=arr.slice(), valid=validIdx(a,n);
+  if(valid.length<minRuns)return a;
+  const c=valid.map(i=>[cx(a,i),cy(a,i)]), flagged=new Set();
+  for(let k=0;k<valid.length;k++){
+    if(flagged.has(k))continue;
+    const neigh=[];for(let j=0;j<valid.length;j++)if(hyp(c[j][0]-c[k][0],c[j][1]-c[k][1])<=radius)neigh.push(j);
+    if(neigh.length<minRuns)continue;
+    const fr=neigh.map(j=>valid[j]).sort((x,y)=>x-y);let runs=1;for(let q=1;q<fr.length;q++)if(fr[q]-fr[q-1]>runGap)runs++;
+    if(runs>=minRuns)neigh.forEach(j=>flagged.add(j));
+  }
+  flagged.forEach(j=>nanRow(a,valid[j]));
+  return a;
+}
+function rejectOutliers(arr,n,maxJump,passes=3){
+  const a=arr.slice();
+  for(let p=0;p<passes;p++){
+    const valid=validIdx(a,n);if(valid.length<3)break;
+    const c=valid.map(i=>[cx(a,i),cy(a,i)]), fast=[];
+    for(let k=0;k<valid.length-1;k++)fast.push(hyp(c[k+1][0]-c[k][0],c[k+1][1]-c[k][1])/(valid[k+1]-valid[k])>maxJump);
+    const rej=[];
+    for(let k=0;k<valid.length;k++){
+      const fl=[];if(k>0)fl.push(fast[k-1]);if(k<valid.length-1)fl.push(fast[k]);
+      if(fl.length&&fl.every(Boolean))rej.push(valid[k]);
+    }
+    if(!rej.length)break;rej.forEach(i=>nanRow(a,i));
+  }
+  return a;
+}
+function interpolateGaps(arr,n,maxGap){
+  const a=arr.slice();let i=0;
+  while(i<n){
+    if(isn(a[i*4])){i++;continue;}
+    let j=i+1;while(j<n&&isn(a[j*4]))j++;
+    if(j<n&&j-i-1>0&&(j-i-1)<=maxGap){
+      for(let k=i+1;k<j;k++){const t=(k-i)/(j-i);for(let c=0;c<4;c++)a[k*4+c]=a[i*4+c]+t*(a[j*4+c]-a[i*4+c]);}
+    }
+    i=j;
+  }
+  return a;
+}
+
+/* ---------- player selection by court position (trackers/player_tracker.py) ---------- */
+function distToCourtRect(x,y,mx=0,my=0){
+  const dx=Math.max(-mx-x,0,x-(CW+mx)), dy=Math.max(-my-y,0,y-(L+my));return hyp(dx,dy);
+}
+function selectPlayers(persons,Hp2c,maxGap=30){
+  const n=persons.length, per={1:new Array(n).fill(null),2:new Array(n).fill(null)}, last={1:null,2:null};
+  for(let i=0;i<n;i++){
+    const cands=[];
+    persons[i].forEach(b=>{
+      const c=apply(Hp2c,(b[0]+b[2])/2,b[3]);
+      if(distToCourtRect(c[0],c[1],1.5,4.0)>0)return;
+      cands.push({role:c[1]<NET_Y?1:2,court:c,box:b});
+    });
+    [1,2].forEach(role=>{
+      const inRole=cands.filter(c=>c.role===role);if(!inRole.length)return;
+      let best=null;const prev=last[role];
+      if(prev){
+        let bd=Infinity,bc=null;inRole.forEach(c=>{const d=hyp(c.court[0]-prev[0],c.court[1]-prev[1]);if(d<bd){bd=d;bc=c;}});
+        if(bd<=8)best=bc;
+      }
+      if(!best)best=inRole.slice().sort((a,b)=>(distToCourtRect(a.court[0],a.court[1])-distToCourtRect(b.court[0],b.court[1]))||((b.box[3]-b.box[1])-(a.box[3]-a.box[1])))[0];
+      per[role][i]=best.box.slice();last[role]=best.court;
+    });
+  }
+  [1,2].forEach(role=>{
+    const o=per[role];let i=0;
+    while(i<n){
+      if(o[i]){i++;continue;}
+      let j=i;while(j<n&&!o[j])j++;
+      if(i>0&&j<n&&(j-i)<=maxGap){for(let k=i;k<j;k++){const t=(k-i+1)/(j-i+1);o[k]=o[i-1].map((v,c)=>(1-t)*v+t*o[j][c]);}}
+      i=j;
+    }
+  });
+  return per;
+}
+
+/* ---------- events (analytics/events.py) ---------- */
+function savgolDeriv(y,window){
+  window=Math.max(5,window|0);if(window%2===0)window++;
+  if(window>y.length){window=y.length%2===1?y.length:y.length-1;}
+  const n=y.length,out=new Array(n);
+  if(window<5){for(let i=0;i<n;i++)out[i]=(y[Math.min(n-1,i+1)]-y[Math.max(0,i-1)])/(Math.min(n-1,i+1)-Math.max(0,i-1)||1);return out;}
+  const half=(window-1)/2;let S2=0,S4=0;for(let t=-half;t<=half;t++){S2+=t*t;S4+=t**4;}
+  const det=window*S4-S2*S2;
+  for(let i=0;i<n;i++){
+    const a=Math.min(Math.max(i-half,0),n-window);let sy=0,sty=0,st2y=0;
+    for(let k=0;k<window;k++){const t=k-half,v=y[a+k];sy+=v;sty+=t*v;st2y+=t*t*v;}
+    const c1=sty/S2,c2=(window*st2y-S2*sy)/det,ti=i-(a+half);
+    out[i]=c1+2*c2*ti;
+  }
+  return out;
+}
+function segments(valid,n,minLen){const s=[];let i=0;while(i<n){if(!valid[i]){i++;continue;}let j=i;while(j<n&&valid[j])j++;if(j-i>=minLen)s.push([i,j]);i=j;}return s;}
+function nms(c,minSep){const kept=[];c.slice().sort((a,b)=>b[1]-a[1]).forEach(([f,s])=>{if(kept.every(k=>Math.abs(f-k[0])>=minSep))kept.push([f,s]);});return kept.map(k=>k[0]).sort((a,b)=>a-b);}
+function inContactZone(bx,by,players){
+  for(const b of players){if(!b)continue;const h=b[3]-b[1];if(h<=0)continue;
+    if(b[0]-.6*h<=bx&&bx<=b[2]+.6*h&&b[1]-.6*h<=by&&by<=b[1]+.85*h)return true;}
+  return false;
+}
+function refineKink(pts,frame,k=4,iters=3){
+  const n=pts.length;let f=frame,best=null;
+  const fit=(idx,c)=>{const m=idx.length;let sx=0,sy=0,sxx=0,sxy=0;idx.forEach(i=>{const v=pts[i][c];sx+=i;sy+=v;sxx+=i*i;sxy+=i*v;});
+    const d=m*sxx-sx*sx;const sl=(m*sxy-sx*sy)/d;return [sl,(sy-sl*sx)/m];};
+  for(let it=0;it<iters;it++){
+    const pre=[],post=[];for(let i=f-k;i<=f;i++)pre.push(i);for(let i=f;i<=f+k;i++)post.push(i);
+    if(pre[0]<0||post[post.length-1]>=n||[...pre,...post].some(i=>isn(pts[i][0])))break;
+    const px=fit(pre,0),py=fit(pre,1),qx=fit(post,0),qy=fit(post,1);
+    const da=[px[0]-qx[0],py[0]-qy[0]],dc=[px[1]-qx[1],py[1]-qy[1]],den=da[0]*da[0]+da[1]*da[1];
+    if(den<1e-9)break;
+    const t=-(da[0]*dc[0]+da[1]*dc[1])/den;
+    if(!(t>=f-3&&t<=f+3))break;
+    best=[t,px[0]*t+px[1],py[0]*t+py[1]];f=Math.round(t);
+  }
+  return best||[frame,pts[frame][0],pts[frame][1]];
+}
+function detectEvents(a,n,players,fps,frameH,hitWin=.25,minSep=.5){
+  const cxs=[],valid=[];for(let i=0;i<n;i++){const ok=!isn(a[i*4]);valid.push(ok);cxs.push(ok?[cx(a,i),cy(a,i)]:[NaN,NaN]);}
+  const wHit=Math.max(3,Math.round(hitWin*fps)),wB=Math.max(2,Math.round(.1*fps)),sepHit=Math.max(2,Math.round(minSep*fps));
+  const vMin=Math.max(.8,.003*frameH*30/fps),sg=Math.max(5,Math.round(.15*fps)|1);
+  const hitC=[],bounceC=[];
+  segments(valid,n,2*wB+3).forEach(([s,e])=>{
+    const seg=cxs.slice(s,e),vy=savgolDeriv(seg.map(p=>p[1]),sg),vx=savgolDeriv(seg.map(p=>p[0]),sg),m=seg.length;
+    const edge=Math.max(2,wHit>>1);
+    for(let i=1;i<m-1;i++){
+      const lo=Math.max(0,i-wHit),hi=Math.min(m,i+1+wHit);
+      if(i-lo<edge||hi-(i+1)<edge)continue;
+      let bx=0,by=0,ax=0,ay=0;for(let k=lo;k<i;k++){bx+=vx[k];by+=vy[k];}for(let k=i+1;k<hi;k++){ax+=vx[k];ay+=vy[k];}
+      bx/=i-lo;by/=i-lo;ax/=hi-i-1;ay/=hi-i-1;
+      const change=hyp(ax-bx,ay-by);
+      if(change>=3*vMin){const f=s+i;if(players&&!inContactZone(cxs[f][0],cxs[f][1],[players[1][f],players[2][f]]))continue;hitC.push([f,change]);}
+    }
+    // bounce kinks
+    const hw=wB,e2=Math.max(2,hw),delta=new Array(m).fill(NaN);
+    for(let i=e2;i<m-e2;i++){let nx=0,pv=0;for(let k=i+1;k<=i+hw;k++)nx+=vy[k];for(let k=Math.max(0,i-hw);k<i;k++)pv+=vy[k];delta[i]=nx/hw-pv/(i-Math.max(0,i-hw));}
+    const fin=delta.filter(v=>!isn(v));
+    if(fin.length>=5){
+      const srt=fin.slice().sort((x,y)=>x-y),med=(arr=>{const q=arr.slice().sort((x,y)=>x-y),h=q.length>>1;return q.length%2?q[h]:(q[h-1]+q[h])/2;});
+      const base=med(fin),mad=1.4826*med(fin.map(v=>Math.abs(v-base))),thr=Math.max(2*vMin,3*mad);
+      for(let i=e2;i<m-e2;i++){
+        const d=base-delta[i];if(!(d>thr))continue;
+        let mx=-Infinity;for(let k=Math.max(0,i-hw);k<=Math.min(m-1,i+hw);k++){const q=base-delta[k];if(!isn(q)&&q>mx)mx=q;}
+        if(d>=mx)bounceC.push([s+i,d]);
+      }
+    }
+  });
+  const hits=nms(hitC,sepHit);
+  let bounces=nms(bounceC,Math.max(3,Math.round(.25*fps)));
+  bounces=bounces.filter(b=>hits.every(h=>Math.abs(b-h)>wB+1));
+  return {hits,bounces};
+}
+
+/* ---------- shots and stats (analytics/stats.py) ---------- */
+function courtTracks(players,Hp2c,n,win=5){
+  const tr={1:[],2:[]};
+  [1,2].forEach(r=>{
+    const raw=[];for(let i=0;i<n;i++){const b=players[r][i];raw.push(b?apply(Hp2c,(b[0]+b[2])/2,b[3]):[NaN,NaN]);}
+    const half=(win-1)/2;
+    for(let i=0;i<n;i++){let sx=0,sy=0,c=0;for(let k=Math.max(0,i-half);k<=Math.min(n-1,i+half);k++){if(!isn(raw[k][0])){sx+=raw[k][0];sy+=raw[k][1];c++;}}
+      tr[r].push(c?[sx/c,sy/c]:[NaN,NaN]);}
+  });
+  return tr;
+}
+function playerSpeeds(track,fps,maxKmh){
+  return track.map((p,i)=>{if(i===0)return NaN;const q=track[i-1];const s=hyp(p[0]-q[0],p[1]-q[1])*fps*3.6;return (isn(s)||s>maxKmh)?NaN:s;});
+}
+function nearestRole(c,players,f){let best=null,bd=Infinity;[1,2].forEach(r=>{const b=players[r][f];if(!b)return;
+  const dx=Math.max(b[0]-c[0],0,c[0]-b[2]),dy=Math.max(b[1]-c[1],0,c[1]-b[3]),d=hyp(dx,dy);if(d<bd){bd=d;best=r;}});return best;}
+function insideCourt(x,y,margin,singles){
+  const x0=(singles?ALLEY:0)-margin,x1=(singles?CW-ALLEY:CW)+margin;return x0<=x&&x<=x1&&-margin<=y&&y<=L+margin;
+}
+function computeShots(ev,a,n,players,Hp2c,fps,speedFps,contactH){
+  const tracks=courtTracks(players,Hp2c,n), speeds={1:playerSpeeds(tracks[1],speedFps,45),2:playerSpeeds(tracks[2],speedFps,45)};
+  const bounces=[];
+  ev.bounces.forEach(b=>{
+    if(isn(a[b*4]))return;
+    const pts=[];for(let i=0;i<n;i++)pts.push([isn(a[i*4])?NaN:(a[i*4]+a[i*4+2])/2,isn(a[i*4])?NaN:a[i*4+3]]);
+    const [t,px,py]=refineKink(pts,b,4), c=apply(Hp2c,px,py);
+    bounces.push({frame:b,t,x:c[0],y:c[1],side:c[1]<NET_Y?'far':'near',inSingles:insideCourt(c[0],c[1],.1,true)});
+  });
+  const hitters=ev.hits.map(h=>isn(a[h*4])?null:nearestRole([cx(a,h),cy(a,h)],players,h));
+  const shots=[];let rally=0,rs=0,lastHit=null;
+  ev.hits.forEach((h,k)=>{
+    const hitter=hitters[k];if(!hitter)return;
+    const next=k+1<ev.hits.length?ev.hits[k+1]:null, wEnd=Math.min(next!==null?next:n,h+Math.round(3*fps));
+    const p0=tracks[hitter][h], gap=lastHit!==null?(h-lastHit)/fps:null;
+    const nearBase=!isn(p0[0])&&(p0[1]<=2.5||p0[1]>=L-2.5), newPoint=gap===null||gap>4, isServe=newPoint&&nearBase;
+    if(newPoint){rally++;rs=0;}rs++;lastHit=h;
+    let speed=NaN,method='none',flight=NaN;
+    const bn=bounces.find(b=>b.frame>=h+2&&b.frame<wEnd);
+    if(bn&&!isn(p0[0])){
+      const d=hyp(bn.x-p0[0],bn.y-p0[1]),d3=hyp(d,contactH);flight=(bn.t-h)/speedFps;speed=d3/flight*3.6;method='hit to bounce';
+    }else if(next!==null&&hitters[k+1]){
+      const p1=tracks[hitters[k+1]][next];
+      if(!isn(p0[0])&&!isn(p1[0])&&next-h>=2){const d=hyp(p1[0]-p0[0],p1[1]-p0[1]);flight=(next-h)/speedFps;speed=d/flight*3.6;method='hit to hit';}
+    }
+    let rejected=false;if(!isn(speed)&&!(speed>=5&&speed<=260)){speed=NaN;method+=' (rejected)';rejected=true;}
+    const opp=hitter===1?2:1, seg=speeds[opp].slice(h,wEnd).filter(v=>!isn(v));
+    shots.push({frame:h,hitter,isServe,rally,rallyShot:rs,speed,method,flight,rejected,oppSpeed:seg.length?seg.reduce((x,y)=>x+y,0)/seg.length:NaN,x:p0[0],y:p0[1]});
+  });
+  return {shots,bounces,tracks,speeds};
+}
+function hudAt(shots,f){
+  const cnt={1:0,2:0},ss={1:[],2:[]},rs={1:[],2:[]},ls={1:NaN,2:NaN},lr={1:NaN,2:NaN};
+  for(const s of shots){if(s.frame>f)break;cnt[s.hitter]++;if(!isn(s.speed)){ss[s.hitter].push(s.speed);ls[s.hitter]=s.speed;}
+    const o=s.hitter===1?2:1;if(!isn(s.oppSpeed)){rs[o].push(s.oppSpeed);lr[o]=s.oppSpeed;}}
+  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:NaN;
+  return {cnt,lastShot:ls,avgShot:{1:avg(ss[1]),2:avg(ss[2])},lastRun:lr,avgRun:{1:avg(rs[1]),2:avg(rs[2])}};
+}
+
+/* ---------- scoring (evaluation/metrics.py) ---------- */
+function eventMetrics(pred,gt,tol){
+  const used=new Set(),errs=[];
+  gt.slice().sort((a,b)=>a-b).forEach(g=>{let bj=-1,bd=Infinity;pred.forEach((p,j)=>{const d=Math.abs(p-g);if(!used.has(j)&&d<=tol&&d<bd){bj=j;bd=d;}});
+    if(bj>=0){used.add(bj);errs.push(pred[bj]-g);}});
+  const tp=errs.length,fp=pred.length-tp,fn=gt.length-tp;
+  const precision=tp+fp?tp/(tp+fp):NaN,recall=tp+fn?tp/(tp+fn):NaN,f1=tp?2*precision*recall/(precision+recall):0;
+  return {tp,fp,fn,precision,recall,f1,meanAbs:errs.length?errs.reduce((s,e)=>s+Math.abs(e),0)/errs.length:NaN};
+}
+
+/* ---------- whole analysis ---------- */
+function analyse(scene,o){
+  const {n,fps}=scene, rng=mulberry32((o.seed|0)+7919);
+  // court estimated from noisy keypoints
+  const noisy=KP.map(k=>{const p=toPix(k[0],k[1]);return [p[0]+gauss(rng)*o.kpNoise,p[1]+gauss(rng)*o.kpNoise];});
+  const Hc2p=fitHomography(KP,noisy), Hp2c=inv3(Hc2p);
+  const err=noisy.map((p,i)=>{const c=apply(Hp2c,p[0],p[1]);return hyp(c[0]-KP[i][0],c[1]-KP[i][1]);});
+  const courtErr=err.reduce((s,v)=>s+v,0)/err.length;
+  const players=selectPlayers(scene.persons,Hp2c);
+  // ball
+  const raw=detArray(scene.det);let clean=raw;
+  if(o.cleaning){
+    clean=suppressStatic(raw,n);
+    clean=rejectOutliers(clean,n,.12*hyp(W,H));
+    clean=interpolateGaps(clean,n,12);
+  }
+  const status=new Array(n);
+  let kept=0,total=0;
+  for(let i=0;i<n;i++){
+    const had=!isn(raw[i*4]),has=!isn(clean[i*4]);
+    status[i]=has?(had&&clean[i*4]===raw[i*4]?'kept':'interp'):(had?'removed':'none');
+    if(had){total++;if(has)kept++;}
+  }
+  const ev=detectEvents(clean,n,players,fps,H);
+  const res=computeShots(ev,clean,n,players,Hp2c,o.speedFps||fps,o.speedFps||fps,o.contactH);
+  const t=scene.truth;
+  const hitM=eventMetrics(ev.hits,t.hits,3), bounceM=eventMetrics(ev.bounces,t.bounces,2);
+  // speed error against truth, matched by nearest hit within 3 frames
+  const errs=[];res.shots.forEach(s=>{if(isn(s.speed))return;const j=t.hits.findIndex(h=>Math.abs(h-s.frame)<=3);if(j>=0){s.truth=t.speeds[j];s.err=(s.speed-t.speeds[j])/t.speeds[j];errs.push(Math.abs(s.err));}});
+  res.shots.forEach(s=>{if(s.truth===undefined){const j=t.hits.findIndex(h=>Math.abs(h-s.frame)<=3);s.truth=j>=0?t.speeds[j]:NaN;}});
+  const mape=errs.length?errs.reduce((x,y)=>x+y,0)/errs.length:NaN;
+  const falseHits=[];
+  return {Hc2p,Hp2c,noisy,courtErr,players,raw,clean,status,events:ev,...res,hitM,bounceM,mape,
+          keptFrac:total?kept/total:NaN,truth:t};
+}
+
+root.Sim={W,H,CW,L,NET_Y,KP,LINES,CAM,toPix,scalePx,apply,inv3,fitHomography,buildScene,analyse,hudAt,eventMetrics,
+          mulberry32,gauss,detArray,suppressStatic,rejectOutliers,interpolateGaps,savgolDeriv,refineKink,selectPlayers,pointBox,ballBox,SIGN};
+})(typeof window!=='undefined'?window:globalThis);
+</script>
+
+<script id="ui">
+(function(){
+'use strict';
+const S=window.Sim, W=S.W, H=S.H;
+const $=id=>document.getElementById(id);
+const view=$('view'),vctx=view.getContext('2d'),mini=$('mini'),mctx=mini.getContext('2d'),tl=$('timeline');
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+const state={scene:null,an:null,pos:0,playing:true,last:0,seed:11};
+let timer=null;
+
+function params(){
+  return {fps:+$('fps').value,flightSec:+$('flight').value,points:$('points').value.split(',').map(Number),
+          dropout:+$('drop').value/100,falsePos:+$('fpn').value,staticRate:+$('stat').value/100,seed:state.seed};
+}
+function opts(){
+  const fps=+$('fps').value;
+  return {kpNoise:+$('kp').value,cleaning:$('clean').checked,contactH:+$('ch').value,seed:state.seed,speedFps:$('old24').checked?24:fps};
+}
+function outputs(){
+  $('o-fps').textContent=$('fps').value+' fps';$('o-flight').textContent=(+$('flight').value).toFixed(2)+' s';
+  $('o-points').textContent='';$('o-drop').textContent=$('drop').value+'%';$('o-fpn').textContent=$('fpn').value;
+  $('o-stat').textContent=$('stat').value+'%';$('o-kp').textContent=$('kp').value+' px';$('o-ch').textContent=(+$('ch').value).toFixed(2)+' m';
+}
+function recompute(){
+  outputs();
+  const keep=state.scene?state.pos/state.scene.n:null;
+  state.scene=S.buildScene(params());
+  state.an=S.analyse(state.scene,opts());
+  const sc=state.scene;
+  $('scrub').max=sc.n-1;
+  state.pos=keep===null?Math.min(sc.n-1,sc.truth.hits[2]+Math.round(sc.fps*.15)):Math.min(sc.n-1,keep*sc.n);
+  renderTiles();renderTable();drawAll();
+}
+function schedule(){clearTimeout(timer);timer=setTimeout(recompute,50);}
+
+/* ---------- drawing: broadcast view ---------- */
+const COURT_FILL='#2c5d84',RUN_FILL='#3a6f99',LINE='#f4f7f9';
+function poly(ctx,pts){ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();}
+function drawCourtBase(ctx){
+  const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#3f7aa6');g.addColorStop(1,'#35688f');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  // advertising boards and crowd band
+  ctx.fillStyle='#17303f';ctx.fillRect(0,0,W,120);
+  ctx.fillStyle='#0f8fd1';ctx.fillRect(0,120,W,70);
+  ctx.fillStyle='rgba(255,255,255,.25)';for(let x=40;x<W;x+=330)ctx.fillRect(x,138,170,34);
+  const c=(x,y)=>S.toPix(x,y);
+  poly(ctx,[c(-3.5,-5),c(S.CW+3.5,-5),c(S.CW+3.5,S.L+6),c(-3.5,S.L+6)]);ctx.fillStyle=RUN_FILL;ctx.fill();
+  poly(ctx,[c(0,0),c(S.CW,0),c(S.CW,S.L),c(0,S.L)]);ctx.fillStyle=COURT_FILL;ctx.fill();
+  ctx.strokeStyle=LINE;ctx.lineWidth=3;
+  S.LINES.forEach(([a,b])=>{const p=c(...S.KP[a]),q=c(...S.KP[b]);ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();});
+  // net
+  const n0=c(0,S.NET_Y),n1=c(S.CW,S.NET_Y),s=S.scalePx(S.CW/2,S.NET_Y)*.914;
+  poly(ctx,[n0,n1,[n1[0],n1[1]-s],[n0[0],n0[1]-s]]);ctx.fillStyle='rgba(255,255,255,.16)';ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(n0[0],n0[1]-s);ctx.lineTo(n1[0],n1[1]-s);ctx.stroke();
+}
+function drawPerson(ctx,b,color,head){
+  const h=b[3]-b[1],w=b[2]-b[0],cx=(b[0]+b[2])/2;
+  ctx.fillStyle='rgba(0,0,0,.22)';ctx.beginPath();ctx.ellipse(cx,b[3],w*.9,h*.05,0,0,7);ctx.fill();
+  ctx.strokeStyle=color;ctx.lineWidth=Math.max(3,w*.16);ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(cx-w*.14,b[3]);ctx.lineTo(cx-w*.08,b[1]+h*.55);ctx.moveTo(cx+w*.14,b[3]);ctx.lineTo(cx+w*.08,b[1]+h*.55);ctx.stroke();
+  ctx.lineWidth=w*.55;ctx.beginPath();ctx.moveTo(cx,b[1]+h*.55);ctx.lineTo(cx,b[1]+h*.2);ctx.stroke();
+  ctx.fillStyle=head;ctx.beginPath();ctx.arc(cx,b[1]+h*.09,h*.075,0,7);ctx.fill();
+}
+function label(ctx,text,x,y,color,size=38){
+  ctx.font=`600 ${size}px "Barlow Condensed",system-ui,sans-serif`;const w=ctx.measureText(text).width;
+  ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(x-6,y-size,w+12,size+8);ctx.fillStyle=color;ctx.fillText(text,x,y-3);
+}
+function drawView(f){
+  const ctx=vctx,sc=state.scene,an=state.an;
+  drawCourtBase(ctx);
+  if($('ov-court').checked){
+    ctx.setLineDash([14,10]);ctx.strokeStyle='#ffb347';ctx.lineWidth=3;
+    S.LINES.forEach(([a,b])=>{const p=S.apply(an.Hc2p,...S.KP[a]),q=S.apply(an.Hc2p,...S.KP[b]);ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();});
+    ctx.setLineDash([]);ctx.fillStyle='#ffb347';an.noisy.forEach(p=>{ctx.beginPath();ctx.arc(p[0],p[1],5,0,7);ctx.fill();});
+  }
+  // people
+  const sel=[an.players[1][f],an.players[2][f]];
+  sc.persons[f].forEach((b,i)=>{
+    const chosen=i<2;
+    drawPerson(ctx,b,i<2?(i===0?'#1d2b4a':'#16202e'):'#59616a',i<2?'#d9b08c':'#c9b09a');
+    if(!chosen){ctx.setLineDash([8,8]);ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=2;ctx.strokeRect(b[0],b[1],b[2]-b[0],b[3]-b[1]);ctx.setLineDash([]);
+      label(ctx,i===2?'ignored: umpire':'ignored: ball kid',b[0],b[1]-4,'#e6edf2',30);}
+  });
+  sel.forEach((b,i)=>{if(!b)return;ctx.strokeStyle='#ff4d4d';ctx.lineWidth=3;ctx.strokeRect(b[0],b[1],b[2]-b[0],b[3]-b[1]);
+    label(ctx,'Player '+(i+1),b[0],b[1]-6,'#ff9c9c',34);});
+  // true ball + shadow
+  const g=sc.ground[f];
+  if(g&&sc.ball[f]){
+    const gp=S.toPix(g[0],g[1]),bb=sc.ball[f],bx=(bb[0]+bb[2])/2,by=(bb[1]+bb[3])/2;
+    ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(gp[0],gp[1],9,4,0,0,7);ctx.fill();
+    ctx.fillStyle='#e7f26a';ctx.beginPath();ctx.arc(bx,by,7,0,7);ctx.fill();
+  }
+  // trail from cleaned track
+  const cl=an.clean;ctx.lineWidth=3;
+  for(let k=1;k<14;k++){const a=f-k,b=f-k+1;if(a<0||isn(cl[a*4])||isn(cl[b*4]))continue;
+    ctx.strokeStyle=`rgba(255,235,59,${(1-k/14)*.8})`;ctx.beginPath();
+    ctx.moveTo((cl[a*4]+cl[a*4+2])/2,(cl[a*4+1]+cl[a*4+3])/2);ctx.lineTo((cl[b*4]+cl[b*4+2])/2,(cl[b*4+1]+cl[b*4+3])/2);ctx.stroke();}
+  // raw detections
+  if($('ov-raw').checked){
+    const d=sc.det[f];
+    if(d){const b=d.box,x=(b[0]+b[2])/2,y=(b[1]+b[3])/2;ctx.strokeStyle='#ff9d2e';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,16,0,7);ctx.stroke();
+      if(an.status[f]==='removed'){ctx.strokeStyle='#ff3b30';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(x-12,y-12);ctx.lineTo(x+12,y+12);ctx.moveTo(x+12,y-12);ctx.lineTo(x-12,y+12);ctx.stroke();
+        label(ctx,d.kind==='sign'?'sign removed':'false positive removed',x+22,y+8,'#ffb3ad',30);}}
+  }
+  if(!isn(cl[f*4])){const b=[cl[f*4],cl[f*4+1],cl[f*4+2],cl[f*4+3]];ctx.strokeStyle='#ffeb3b';ctx.lineWidth=3;ctx.strokeRect(b[0]-6,b[1]-6,b[2]-b[0]+12,b[3]-b[1]+12);
+    label(ctx,'Ball',b[0],b[1]-12,'#fff3a0',32);}
+  // events flashes
+  an.events.hits.forEach(h=>{const dt=f-h;if(dt>=0&&dt<Math.round(sc.fps*.35)){const s=an.shots.find(q=>q.frame===h),p=S.toPix(...(sc.ground[h]||[S.CW/2,S.L/2]));
+    const bb=sc.ball[h];if(bb)label(ctx,'HIT'+(s?' P'+s.hitter:''),(bb[0]+bb[2])/2+18,bb[1]-18,'#ff9a6b',42);}});
+  an.bounces.forEach(b=>{const dt=f-b.frame;if(dt>=0&&dt<Math.round(sc.fps*.45)){const p=S.apply(an.Hc2p,b.x,b.y);const r=18+dt*(60/sc.fps)*3;
+    ctx.strokeStyle=b.inSingles?'#ffd166':'#ff5d5d';ctx.lineWidth=4;ctx.beginPath();ctx.ellipse(p[0],p[1],r*1.8,r*.7,0,0,7);ctx.stroke();
+    label(ctx,b.inSingles?'IN':'OUT',p[0]-20,p[1]-r*.7-10,b.inSingles?'#ffe29a':'#ff9d9d',40);}});
+  drawHud(ctx,f);
+  ctx.font='600 40px "Barlow Condensed",system-ui,sans-serif';ctx.fillStyle='#6cff9a';
+  ctx.fillText('Frame '+f,22,64);
+}
+function fmt(v){return isn(v)?'--':v.toFixed(0)+' km/h';}
+function drawHud(ctx,f){
+  const h=S.hudAt(state.an.shots,f),x=W-560,y=H-370,w=530,hh=340;
+  ctx.fillStyle='rgba(8,14,20,.74)';ctx.fillRect(x,y,w,hh);
+  ctx.fillStyle='#fff';ctx.font='600 34px "Barlow Condensed",system-ui,sans-serif';ctx.fillText('Player 1 (far)',x+190,y+46);ctx.fillText('Player 2 (near)',x+362,y+46);
+  const rows=[['Shots',h.cnt[1],h.cnt[2],true],['Shot speed',h.lastShot[1],h.lastShot[2]],['Avg. shot',h.avgShot[1],h.avgShot[2]],['Run speed',h.lastRun[1],h.lastRun[2]],['Avg. run',h.avgRun[1],h.avgRun[2]]];
+  rows.forEach((r,i)=>{const yy=y+100+i*47;ctx.font='500 28px "Barlow",system-ui,sans-serif';ctx.fillStyle='#b7c6d1';ctx.fillText(r[0],x+18,yy);
+    ctx.font='500 26px "IBM Plex Mono",monospace';ctx.fillStyle='#fff';ctx.textAlign='right';
+    ctx.fillText(r[3]?String(r[1]):fmt(r[1]),x+338,yy);ctx.fillText(r[3]?String(r[2]):fmt(r[2]),x+510,yy);ctx.textAlign='left';});
+}
+const isn=Number.isNaN;
+
+/* ---------- mini court ---------- */
+function drawMini(f){
+  const ctx=mctx,sc=state.scene,an=state.an,cw=210,ppm=cw/S.CW,ox=20,oy=52;
+  const m=(x,y)=>[ox+x*ppm,oy+y*ppm];
+  ctx.clearRect(0,0,250,560);
+  ctx.fillStyle=css('--surface2');ctx.fillRect(0,0,250,560);
+  ctx.strokeStyle=css('--muted');ctx.lineWidth=1.6;
+  S.LINES.forEach(([a,b])=>{const p=m(...S.KP[a]),q=m(...S.KP[b]);ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();});
+  const n0=m(0,S.NET_Y),n1=m(S.CW,S.NET_Y);ctx.strokeStyle=css('--accent');ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(n0[0],n0[1]);ctx.lineTo(n1[0],n1[1]);ctx.stroke();
+  const win=Math.round(sc.fps*.5);
+  if($('ov-truth').checked){ctx.strokeStyle=css('--bounce');ctx.lineWidth=1.8;
+    (sc.truth.bounceGround||[]).forEach((g,i)=>{const fb=sc.truth.bounces[i];if(f-fb>=0&&f-fb<win*2){const p=m(g[0],g[1]);ctx.beginPath();ctx.arc(p[0],p[1],8,0,7);ctx.stroke();}});}
+  an.bounces.forEach(b=>{const dt=f-b.frame;if(dt>=0&&dt<win*2){const p=m(b.x,b.y);ctx.fillStyle=b.inSingles?css('--bounce'):css('--bad');ctx.globalAlpha=1-dt/(win*2);ctx.beginPath();ctx.arc(p[0],p[1],5,0,7);ctx.fill();ctx.globalAlpha=1;}});
+  [1,2].forEach(r=>{const p=an.tracks[r][f];if(!p||isn(p[0]))return;const q=m(p[0],p[1]);
+    ctx.fillStyle=css('--ok');ctx.beginPath();ctx.arc(q[0],q[1],6,0,7);ctx.fill();
+    ctx.fillStyle=css('--ink');ctx.font='600 12px "Barlow",system-ui,sans-serif';ctx.fillText('P'+r,q[0]+9,q[1]+4);});
+}
+
+/* ---------- timeline ---------- */
+function drawTimeline(f){
+  const dpr=window.devicePixelRatio||1,cw=tl.clientWidth,ch=tl.clientHeight;
+  if(tl.width!==Math.round(cw*dpr)||tl.height!==Math.round(ch*dpr)){tl.width=Math.round(cw*dpr);tl.height=Math.round(ch*dpr);}
+  const ctx=tl.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,cw,ch);
+  const sc=state.scene,an=state.an,left=64,right=cw-8,n=sc.n,x=i=>left+(i+.5)/n*(right-left);
+  const rows=[['Ball',8,26],['Hits',44,28],['Bounces',86,28]];
+  ctx.font='500 12px "Barlow",system-ui,sans-serif';ctx.textBaseline='middle';
+  rows.forEach(([t,y,h])=>{ctx.fillStyle=css('--muted');ctx.fillText(t,4,y+h/2);});
+  const bw=Math.max(1,(right-left)/n);
+  for(let i=0;i<n;i++){const st=an.status[i];if(st==='none'&&!sc.ball[i])continue;
+    ctx.fillStyle=st==='kept'?css('--kept'):st==='interp'?css('--interp'):st==='removed'?css('--removed'):css('--none');
+    ctx.fillRect(left+i/n*(right-left),8,bw+.4,26);}
+  const mark=(frames,y,color,hollow,shape)=>frames.forEach(fr=>{const px=x(fr),r=6;ctx.beginPath();
+    if(shape==='tri'){ctx.moveTo(px,y-r);ctx.lineTo(px+r,y+r);ctx.lineTo(px-r,y+r);ctx.closePath();}else ctx.arc(px,y,r,0,7);
+    if(hollow){ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke();}else{ctx.fillStyle=color;ctx.fill();}});
+  mark(sc.truth.hits,58,css('--hit'),true,'tri');mark(an.events.hits,70,css('--hit'),false,'tri');
+  mark(sc.truth.bounces,100,css('--bounce'),true,'circ');mark(an.events.bounces,112,css('--bounce'),false,'circ');
+  // seconds axis
+  ctx.fillStyle=css('--muted');ctx.textBaseline='alphabetic';ctx.font='500 11px "IBM Plex Mono",monospace';
+  const total=n/sc.fps,step=total>40?10:total>16?5:2;
+  for(let t=0;t<=total;t+=step){const px=left+t*sc.fps/n*(right-left);ctx.fillText(t+'s',px+2,ch-6);ctx.fillStyle=css('--line');ctx.fillRect(px,130,1,6);ctx.fillStyle=css('--muted');}
+  ctx.fillStyle=css('--ink');ctx.fillRect(x(f)-1,2,2,ch-22);
+}
+
+/* ---------- tiles and table ---------- */
+function pct(v){return isn(v)?'--':Math.round(v*100)+'%';}
+function renderTiles(){
+  const an=state.an,sc=state.scene;
+  const tile=(k,v,s,cls='')=>`<div class="tile"><div class="k">${k}</div><div class="v ${cls}">${v}</div><div class="s">${s}</div></div>`;
+  const c=(v,g,w)=>isn(v)?'':v>=g?'good':v>=w?'warn':'bad';
+  $('tiles').innerHTML=
+    tile('Hits found',pct(an.hitM.f1),`${an.hitM.tp} of ${sc.truth.hits.length} right, ${an.hitM.fp} extra`,c(an.hitM.f1,.9,.7))+
+    tile('Bounces found',pct(an.bounceM.f1),`${an.bounceM.tp} of ${sc.truth.bounces.length} right, ${an.bounceM.fp} extra`,c(an.bounceM.f1,.9,.7))+
+    tile('Speed error',isn(an.mape)?'--':(an.mape*100).toFixed(1)+'%',`mean absolute, ${an.shots.filter(s=>!isn(s.err)).length} shots`,isn(an.mape)?'':an.mape<=.08?'good':an.mape<=.15?'warn':'bad')+
+    tile('Court error',an.courtErr.toFixed(2)+' m',`from ${$('kp').value} px keypoint noise`,an.courtErr<.15?'good':an.courtErr<.4?'warn':'bad')+
+    tile('Ball kept',pct(an.keptFrac),'raw detections that survive cleaning')+
+    tile('Rallies',String(new Set(an.shots.map(s=>s.rally)).size),`${an.shots.filter(s=>s.isServe).length} serves found, ${sc.truth.serves.filter(Boolean).length} real`);
+}
+function renderTable(){
+  const an=state.an,sc=state.scene,tb=document.querySelector('#shots tbody');
+  tb.innerHTML=an.shots.map((s,i)=>{
+    const has=s.err!==undefined&&!isn(s.err);
+    const ec=!has?'':Math.abs(s.err)<=.08?'good':Math.abs(s.err)<=.15?'warn':'bad';
+    return `<tr data-f="${s.frame}"><td>${i+1}</td><td>${(s.frame/sc.fps).toFixed(2)} s</td><td class="l">Player ${s.hitter}</td><td class="l">${s.isServe?'Serve':'Rally '+s.rally+'.'+s.rallyShot}</td>`+
+      `<td>${isn(s.speed)?'--':s.speed.toFixed(0)+' km/h'}</td><td>${isn(s.truth)?'--':s.truth.toFixed(0)+' km/h'}</td>`+
+      `<td class="${ec}">${!has?'--':(s.err>0?'+':'')+(s.err*100).toFixed(1)+'%'}</td><td class="l">${s.method}</td></tr>`;}).join('')||
+    '<tr><td colspan="8" class="l">No shots detected.</td></tr>';
+}
+function markRow(f){document.querySelectorAll('#shots tbody tr').forEach(r=>{const fr=+r.dataset.f;r.classList.toggle('cur',f>=fr&&(!r.nextElementSibling||f<+r.nextElementSibling.dataset.f));});}
+
+function drawAll(){
+  const f=Math.max(0,Math.min(state.scene.n-1,Math.round(state.pos)));
+  drawView(f);drawMini(f);drawTimeline(f);markRow(f);
+  $('scrub').value=f;$('time').textContent=`${(f/state.scene.fps).toFixed(2)} s   frame ${f}/${state.scene.n-1}`;
+}
+
+/* ---------- playback ---------- */
+function tick(t){
+  if(state.playing&&state.scene){
+    const dt=state.last?(t-state.last)/1000:0;state.pos+=dt*state.scene.fps*(+$('rate').value);
+    if(state.pos>=state.scene.n-1)state.pos=0;drawAll();
+  }
+  state.last=t;requestAnimationFrame(tick);
+}
+function setPlaying(p){state.playing=p;$('play').textContent=p?'Pause':'Play';}
+
+/* ---------- wiring ---------- */
+['fps','flight','points','drop','fpn','stat','kp','clean','old24','ch'].forEach(id=>$(id).addEventListener('input',schedule));
+['ov-raw','ov-court','ov-truth'].forEach(id=>$(id).addEventListener('input',()=>drawAll()));
+$('play').onclick=()=>setPlaying(!state.playing);
+$('restart').onclick=()=>{state.pos=0;drawAll();};
+$('scrub').addEventListener('input',e=>{setPlaying(false);state.pos=+e.target.value;drawAll();});
+tl.addEventListener('pointerdown',e=>{const r=tl.getBoundingClientRect(),left=64,right=r.width-8;
+  const seek=ev=>{const x=ev.clientX-r.left;state.pos=Math.max(0,Math.min(state.scene.n-1,(x-left)/(right-left)*state.scene.n));drawAll();};
+  setPlaying(false);seek(e);const mv=ev=>seek(ev),up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up);};
+  addEventListener('pointermove',mv);addEventListener('pointerup',up);});
+document.querySelector('#shots tbody').addEventListener('click',e=>{const tr=e.target.closest('tr');if(tr&&tr.dataset.f){setPlaying(false);state.pos=Math.max(0,+tr.dataset.f-Math.round(state.scene.fps*.2));drawAll();}});
+$('reroll').onclick=()=>{state.seed=Math.floor(Math.random()*1e6);recompute();};
+function preset(v){Object.entries(v).forEach(([k,val])=>{const el=$(k);if(el.type==='checkbox')el.checked=val;else el.value=val;});state.seed=11;recompute();}
+$('p-clean').onclick=()=>preset({drop:0,fpn:0,stat:0,kp:0,clean:true,old24:false});
+$('p-broadcast').onclick=()=>preset({drop:12,fpn:6,stat:25,kp:1.5,clean:true,old24:false});
+$('p-rough').onclick=()=>preset({drop:30,fpn:20,stat:50,kp:4,clean:true,old24:false});
+$('p-old').onclick=()=>preset({drop:12,fpn:6,stat:25,kp:1.5,clean:false,old24:true});
+addEventListener('resize',()=>{if(state.scene)drawTimeline(Math.round(state.pos));});
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(state.scene)drawAll();});
+
+recompute();
+requestAnimationFrame(tick);
+})();
+</script>
