@@ -59,8 +59,16 @@ changing the video or model recomputes instead of silently reusing stale results
   shots I could verify right (a forehand and a two-handed backhand) and returned `unknown` for the far player, whose pose is too
   small to read.
 * `python live.py --source 0 --display` (or a stream URL or file) runs the analysis in near real time on a rolling window. Stats
-  trail the picture by about a second and a static camera is assumed. With the default heavy models it processed only 1.8 fps on
-  the development machine (heavily loaded at the time), so use lighter models (`--player-model yolov8s`) and a GPU for real use.
+  trail the picture by about a second and a static camera is assumed. It is not real time on every setup. Measured per 1080p frame on
+  an RTX 4060 laptop GPU (models do run on the GPU):
+
+  | Stage | Setting | Time |
+  |---|---|---|
+  | Ball | `--ball-imgsz 1280` (default) / 960 / 640 | 110 / 70 / 39 ms |
+  | Players | `yolov8x` (default) / `yolov8s` / `yolov8n` | 91 / 56 / 41 ms |
+
+  The defaults come to about 5 fps end to end. With `--ball-imgsz 640 --player-model yolov8n --player-every 3` the cost is about
+  53 ms per frame (roughly 19 fps), still short of 30 fps, and the ball detector's accuracy at the smaller size has not been checked.
 
 ## Tests and evaluation
 
