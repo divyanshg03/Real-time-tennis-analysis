@@ -27,7 +27,8 @@ from utils import (get_video_info, iter_video, read_frames_at, VideoSink, make_m
 log = logging.getLogger(__name__)
 
 BOUNCE_MARKER_FRAMES = 15
-SERVE_DISTANCE_FACTOR = 1.6   # serves are struck higher, so the ball projects further from the server
+SERVE_DISTANCE_FACTOR = 2.0   # serves are struck higher (about 1.5-1.7 head distances, versus ~0.5 for a rally hit)
+MIN_HEAD_DISPLACEMENT_M = 1.0  # guards against a degenerate head/foot projection
 
 
 def build_court_model(cfg: Config, info):
@@ -45,14 +46,19 @@ def build_court_model(cfg: Config, info):
     )
 
 
-def _court_distance_gate(ball_arr, players, court_model, max_dist_m):
-    """frame -> True when the ball is within ``max_dist_m`` of a player on the court plane."""
-    if not max_dist_m:
+def _court_distance_gate(ball_arr, players, court_model, max_ratio):
+    """frame -> True when the ball is near a player on the court plane.
+
+    "Near" is relative to that player's own head: both the ball and the head are airborne points, so both are
+    displaced by the same camera parallax. The ball must be within ``max_ratio`` times the head's displacement
+    from the player's feet (``SERVE_DISTANCE_FACTOR`` times more in the serve window).
+    """
+    if not max_ratio:
         return None
     centers = ball_centers(ball_arr)
 
     def gate(frame, serve_like=False):
-        limit = max_dist_m * (SERVE_DISTANCE_FACTOR if serve_like else 1.0)
+        limit = max_ratio * (SERVE_DISTANCE_FACTOR if serve_like else 1.0)
         c = centers[frame]
         if np.isnan(c[0]):
             return False
@@ -60,7 +66,9 @@ def _court_distance_gate(ball_arr, players, court_model, max_dist_m):
         bx, by = H.pixel_to_court_point((c[0], c[1]))
         for bbox in players[frame].values():
             fx, fy = H.pixel_to_court_point(get_foot_position(bbox))
-            if np.hypot(bx - fx, by - fy) <= limit:
+            hx, hy = H.pixel_to_court_point(((bbox[0] + bbox[2]) / 2, bbox[1]))
+            head = max(np.hypot(hx - fx, hy - fy), MIN_HEAD_DISPLACEMENT_M)
+            if np.hypot(bx - fx, by - fy) <= limit * head:
                 return True
         return False
 
@@ -73,7 +81,7 @@ def analyse(cfg: Config, info, player_detections, ball_detections, court_model: 
         player_detections, court_model.homography_for_frame)
     ball_arr = clean_ball_positions(ball_detections, (info.width, info.height),
                                     cfg.ball_max_jump_frac, cfg.ball_max_gap_frames)
-    gate = _court_distance_gate(ball_arr, players, court_model, cfg.max_hit_distance_m)
+    gate = _court_distance_gate(ball_arr, players, court_model, cfg.max_hit_distance_ratio)
     events = detect_events(ball_arr, players, info.fps, info.height,
                            cfg.hit_window_seconds, cfg.min_hit_separation_seconds, hit_gate=gate)
     result = compute_shots(events, ball_arr, players, court_model.homography_for_frame, info.fps, cfg)
