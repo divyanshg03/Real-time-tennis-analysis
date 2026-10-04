@@ -38,9 +38,19 @@ def test_left_hander_uses_the_left_wrist_and_flips_sides():
     assert classify_shot([k] * 3, right_handed=False)[0] == "backhand"
 
 
-def test_serve_flag_wins_and_wrist_above_nose_is_overhead():
-    assert classify_shot([pose(580)], is_serve=True)[0] == "serve"
-    assert classify_shot([pose(520, wrist_y=120)] * 3)[0] == "overhead"
+def test_serve_needs_the_flag_and_a_raised_wrist():
+    assert classify_shot([pose(520, wrist_y=120)] * 3, is_serve=True)[0] == "serve"
+    assert classify_shot([pose(520, wrist_y=120)] * 3)[0] == "overhead"       # no flag: a smash
+
+
+def test_first_hit_of_a_clip_that_starts_mid_rally_is_not_a_serve():
+    # flagged as a serve (first hit near the baseline) but the wrist is low at contact: a groundstroke
+    assert classify_shot([pose(580)] * 3, is_serve=True)[0] == "forehand"
+    assert classify_shot([pose(420)] * 3, is_serve=True)[0] == "backhand"
+
+
+def test_serve_flag_alone_is_trusted_when_the_pose_is_unreadable():
+    assert classify_shot([None, None], is_serve=True)[0] == "serve"
 
 
 def test_median_ignores_one_bad_frame():
