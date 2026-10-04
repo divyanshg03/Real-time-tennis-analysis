@@ -33,6 +33,10 @@ class Config:
     # Events / physics
     hit_window_seconds: float = 0.25
     min_hit_separation_seconds: float = 0.5
+    # A hit needs the ball within this distance of a player on the court plane (0 disables). The ball is
+    # airborne so its projection is displaced by parallax: real hits on the sample clip were 3.9-5.8 m away,
+    # bounces in front of a player 7-9 m. Tuned on very little data; check it on your own footage.
+    max_hit_distance_m: float = 6.5
     serve_gap_seconds: float = 4.0
     max_flight_seconds: float = 3.0   # a shot's bounce must occur within this time of the hit
     assumed_contact_height_m: float = 1.0
