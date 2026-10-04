@@ -13,6 +13,7 @@ import os
 import cv2
 import numpy as np
 
+from analytics.events import ball_centers
 from analytics import (detect_events, compute_shots, build_frame_stats, summarize,
                        export_tables, export_heatmaps)
 from config import Config
@@ -21,11 +22,12 @@ from court_line_detector.court_line_detector import (CourtLineDetector, CourtMod
 from mini_court import MiniCourt
 from trackers import PlayerTracker, BallTracker, clean_ball_positions
 from utils import (get_video_info, iter_video, read_frames_at, VideoSink, make_meta,
-                   draw_player_stats_frame)
+                   draw_player_stats_frame, get_foot_position)
 
 log = logging.getLogger(__name__)
 
 BOUNCE_MARKER_FRAMES = 15
+SERVE_DISTANCE_FACTOR = 1.6   # serves are struck higher, so the ball projects further from the server
 
 
 def build_court_model(cfg: Config, info):
@@ -43,14 +45,37 @@ def build_court_model(cfg: Config, info):
     )
 
 
+def _court_distance_gate(ball_arr, players, court_model, max_dist_m):
+    """frame -> True when the ball is within ``max_dist_m`` of a player on the court plane."""
+    if not max_dist_m:
+        return None
+    centers = ball_centers(ball_arr)
+
+    def gate(frame, serve_like=False):
+        limit = max_dist_m * (SERVE_DISTANCE_FACTOR if serve_like else 1.0)
+        c = centers[frame]
+        if np.isnan(c[0]):
+            return False
+        H = court_model.homography_for_frame(frame)
+        bx, by = H.pixel_to_court_point((c[0], c[1]))
+        for bbox in players[frame].values():
+            fx, fy = H.pixel_to_court_point(get_foot_position(bbox))
+            if np.hypot(bx - fx, by - fy) <= limit:
+                return True
+        return False
+
+    return gate
+
+
 def analyse(cfg: Config, info, player_detections, ball_detections, court_model: CourtModel):
     """Pure analysis: detections in, tables out (no video or models involved)."""
     players = PlayerTracker.select_court_players(
         player_detections, court_model.homography_for_frame)
     ball_arr = clean_ball_positions(ball_detections, (info.width, info.height),
                                     cfg.ball_max_jump_frac, cfg.ball_max_gap_frames)
+    gate = _court_distance_gate(ball_arr, players, court_model, cfg.max_hit_distance_m)
     events = detect_events(ball_arr, players, info.fps, info.height,
-                           cfg.hit_window_seconds, cfg.min_hit_separation_seconds)
+                           cfg.hit_window_seconds, cfg.min_hit_separation_seconds, hit_gate=gate)
     result = compute_shots(events, ball_arr, players, court_model.homography_for_frame, info.fps, cfg)
     frame_stats = build_frame_stats(result["shots"], len(ball_arr))
     summary = summarize(result["shots"], result["speeds"], result["tracks"], info.fps,

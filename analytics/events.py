@@ -123,11 +123,16 @@ def _non_max_suppress(cands, min_sep):
 
 
 def detect_events(ball_arr, player_detections, fps, frame_height,
-                  hit_window_seconds=0.25, min_hit_separation_seconds=0.5):
+                  hit_window_seconds=0.25, min_hit_separation_seconds=0.5, hit_gate=None):
     """Detect racket hits and ground bounces.
 
     ball_arr: (N, 4) ball boxes with NaN holes.
     player_detections: per-frame ``{role: bbox}`` (or None to skip the contact-zone test).
+    hit_gate: optional ``(frame, serve_like) -> bool``; a hit candidate is dropped when it returns False.
+    The pipeline uses it to require the ball to be near a player on the court plane, which rejects a bounce
+    that happens in front of a player (inside his image-space contact zone but metres away from him).
+    ``serve_like`` is True within the first ~1.2 s of a continuous ball track, where a serve is struck
+    high above the head and the ball projects further from the server.
     """
     n = len(ball_arr)
     centers = ball_centers(ball_arr)
@@ -141,6 +146,7 @@ def detect_events(ball_arr, player_detections, fps, frame_height,
     sg_window = max(5, int(round(0.15 * fps)) | 1)
 
     hit_cands, bounce_cands = [], []
+    serve_window = int(round(1.2 * fps))   # a serve is struck within ~1 s of the toss appearing
     for start, end in valid_segments(valid, min_len=2 * w_bounce + 3):
         seg = centers[start:end]
         _, vy = _velocity(seg[:, 1], sg_window)
@@ -149,6 +155,8 @@ def detect_events(ball_arr, player_detections, fps, frame_height,
         for i, score in _hit_changes(np.column_stack([vx, vy]), w_hit, v_min):
             frame = start + i
             if player_detections is not None and not _in_contact_zone(centers[frame], player_detections[frame]):
+                continue
+            if hit_gate is not None and not hit_gate(frame, (frame - start) <= serve_window):
                 continue
             hit_cands.append((frame, score))
 
